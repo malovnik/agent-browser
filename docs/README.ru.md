@@ -103,6 +103,29 @@ npm run build
 
 agent-browser работает как [MCP](https://modelcontextprotocol.io/)-сервер через stdio. Любой MCP-совместимый клиент может подключиться.
 
+### Claude Desktop (ClawBot)
+
+Отредактируй конфиг:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+    }
+  }
+}
+```
+
+С видимым окном браузера добавь `"--headed"` в конец массива `args`.
+
+Перезапусти Claude Desktop после сохранения. 21 инструмент появится в меню инструментов (иконка молотка).
+
 ### Claude Code
 
 ```bash

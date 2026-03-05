@@ -103,6 +103,29 @@ See [Integration](#integration) below for your specific tool.
 
 agent-browser runs as an [MCP](https://modelcontextprotocol.io/) server over stdio. Any MCP-compatible client can connect to it.
 
+### Claude Desktop (ClawBot)
+
+Edit the config file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+    }
+  }
+}
+```
+
+With visible browser window, add `"--headed"` to the end of the `args` array.
+
+Restart Claude Desktop after saving. The 21 tools will appear in the tool picker (hammer icon).
+
 ### Claude Code
 
 ```bash
