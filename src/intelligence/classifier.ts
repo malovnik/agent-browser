@@ -7,6 +7,7 @@ interface ClassificationSignal {
 }
 
 const URL_PATTERNS: Array<{ pattern: RegExp; type: PageType; weight: number }> = [
+  { pattern: /^https?:\/\/(www\.)?(google|bing|duckduckgo|yandex|baidu)\./i, type: "search", weight: 0.7 },
   { pattern: /\/(login|signin|sign-in|auth)\b/i, type: "login", weight: 0.6 },
   { pattern: /\/(register|signup|sign-up|join)\b/i, type: "login", weight: 0.5 },
   { pattern: /\/(search|results|query)\b/i, type: "search", weight: 0.5 },
@@ -87,9 +88,12 @@ export class PageClassifier {
       signals.push({ pageType: "login", confidence: 0.6, reason: "Has password field" });
     }
 
-    const searchBoxes = elements.filter((e) => e.role === "searchbox");
+    const searchBoxes = elements.filter(
+      (e) => e.role === "searchbox" || e.role === "combobox" ||
+        (e.role === "textbox" && (/search/i.test(e.name) || /search/i.test(e.placeholder ?? "")))
+    );
     if (searchBoxes.length > 0) {
-      signals.push({ pageType: "search", confidence: 0.3, reason: "Has search box" });
+      signals.push({ pageType: "search", confidence: 0.4, reason: "Has search box" });
     }
 
     const links = elements.filter((e) => e.role === "link");

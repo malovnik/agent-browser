@@ -1,145 +1,176 @@
-import type { ActionGroup, ActionType, DiscoveredAction, PageElement, PageType } from "../types.js";
+import type { ActionGroup, DiscoveredAction, PageElement, PageType } from "../types.js";
 
 export class ActionDiscoverer {
+  private usedRefs = new Set<string>();
+
   discover(pageType: PageType, elements: PageElement[]): ActionGroup[] {
+    this.usedRefs = new Set();
     const groups: ActionGroup[] = [];
 
-    const authGroup = this.discoverAuthActions(elements);
-    if (authGroup) groups.push(authGroup);
+    const authGroups = this.discoverAuthActions(elements);
+    groups.push(...authGroups);
 
     const searchGroup = this.discoverSearchActions(elements);
     if (searchGroup) groups.push(searchGroup);
 
-    const formGroups = this.discoverFormActions(elements, pageType);
+    const formGroups = this.discoverFormActions(elements);
     groups.push(...formGroups);
 
     const navGroup = this.discoverNavigationActions(elements);
     if (navGroup) groups.push(navGroup);
 
-    const buttonGroup = this.discoverButtonActions(elements, groups);
+    const buttonGroup = this.discoverButtonActions(elements);
     if (buttonGroup) groups.push(buttonGroup);
 
     return groups;
   }
 
-  private discoverAuthActions(elements: PageElement[]): ActionGroup | null {
+  private markUsed(...refs: string[]): void {
+    for (const ref of refs) this.usedRefs.add(ref);
+  }
+
+  private isUsed(ref: string): boolean {
+    return this.usedRefs.has(ref);
+  }
+
+  private discoverAuthActions(elements: PageElement[]): ActionGroup[] {
     const passwordFields = elements.filter(
       (e) =>
-        (e.role === "textbox" && e.type === "password") ||
-        e.name.toLowerCase().includes("password")
+        e.role === "textbox" &&
+        (e.type === "password" ||
+          e.name.toLowerCase() === "password" ||
+          e.placeholder?.toLowerCase() === "password")
     );
 
-    if (passwordFields.length === 0) return null;
+    if (passwordFields.length === 0) return [];
 
     const emailFields = elements.filter(
       (e) =>
         e.role === "textbox" &&
+        e.type !== "password" &&
         (e.type === "email" ||
-          e.name.toLowerCase().includes("email") ||
-          e.name.toLowerCase().includes("username") ||
-          e.placeholder?.toLowerCase().includes("email") ||
-          e.placeholder?.toLowerCase().includes("username"))
+          /email|username|login/i.test(e.name) ||
+          /email|username|login/i.test(e.placeholder ?? ""))
     );
+
+    const socialPattern = /google|github|facebook|apple|microsoft|twitter|oauth|passkey/i;
+
+    const socialButtons = elements.filter(
+      (e) => e.role === "button" && socialPattern.test(e.name)
+    );
+
+    const socialRefs = new Set(socialButtons.map((b) => b.ref));
 
     const submitButtons = elements.filter(
       (e) =>
         e.role === "button" &&
+        !socialRefs.has(e.ref) &&
         /sign.?in|log.?in|submit|enter|continue/i.test(e.name)
     );
 
-    const socialButtons = elements.filter(
-      (e) =>
-        e.role === "button" &&
-        /google|github|facebook|apple|microsoft|twitter|oauth/i.test(e.name)
-    );
-
-    const actions: DiscoveredAction[] = [];
+    const groups: ActionGroup[] = [];
+    const loginActions: DiscoveredAction[] = [];
 
     for (const field of emailFields) {
-      actions.push({
+      this.markUsed(field.ref);
+      loginActions.push({
         ref: field.ref,
         command: `fill(${field.ref}, "your-email")`,
-        description: field.name || field.placeholder || "Email/username input",
+        description: field.name || field.placeholder || "Email/username",
         element: field,
       });
     }
 
     for (const field of passwordFields) {
-      actions.push({
+      this.markUsed(field.ref);
+      loginActions.push({
         ref: field.ref,
         command: `fill(${field.ref}, "your-password")`,
-        description: field.name || "Password input",
+        description: field.name || "Password",
         element: field,
       });
     }
 
     for (const btn of submitButtons) {
-      actions.push({
+      this.markUsed(btn.ref);
+      loginActions.push({
         ref: btn.ref,
         command: `click(${btn.ref})`,
-        description: btn.name || "Submit login",
+        description: btn.name || "Sign in",
         element: btn,
       });
     }
 
-    const group: ActionGroup = {
-      id: "auth_login",
-      label: "Login Form",
-      type: "auth_flow",
-      elements: actions,
-    };
+    if (loginActions.length > 0) {
+      groups.push({
+        id: "auth_login",
+        label: "Login Form",
+        type: "auth_flow",
+        elements: loginActions,
+      });
+    }
 
     if (socialButtons.length > 0) {
-      const socialGroup: ActionGroup = {
+      const socialActions = socialButtons.map((btn) => {
+        this.markUsed(btn.ref);
+        return {
+          ref: btn.ref,
+          command: `click(${btn.ref})`,
+          description: btn.name,
+          element: btn,
+        };
+      });
+
+      groups.push({
         id: "auth_social",
         label: "Social Sign-In",
         type: "auth_flow",
-        elements: socialButtons.map((btn) => ({
-          ref: btn.ref,
-          command: `click(${btn.ref})`,
-          description: `Sign in with ${btn.name}`,
-          element: btn,
-        })),
-      };
-      return group;
+        elements: socialActions,
+      });
     }
 
-    return group;
+    return groups;
   }
 
   private discoverSearchActions(elements: PageElement[]): ActionGroup | null {
     const searchBoxes = elements.filter(
       (e) =>
-        e.role === "searchbox" ||
-        (e.role === "textbox" &&
-          (e.name.toLowerCase().includes("search") ||
-            e.placeholder?.toLowerCase().includes("search") ||
-            e.type === "search"))
+        !this.isUsed(e.ref) &&
+        (e.role === "searchbox" ||
+          e.role === "combobox" ||
+          (e.role === "textbox" &&
+            (/search/i.test(e.name) ||
+              /search/i.test(e.placeholder ?? "") ||
+              e.type === "search")))
     );
 
     if (searchBoxes.length === 0) return null;
 
     const searchButtons = elements.filter(
       (e) =>
-        e.role === "button" && /search|find|go|submit/i.test(e.name)
+        !this.isUsed(e.ref) &&
+        e.role === "button" &&
+        /search|find|go/i.test(e.name)
     );
 
     const actions: DiscoveredAction[] = [];
 
     for (const box of searchBoxes) {
+      this.markUsed(box.ref);
       actions.push({
         ref: box.ref,
         command: `fill(${box.ref}, "search query")`,
-        description: box.name || box.placeholder || "Search input",
+        description: box.name || box.placeholder || "Search",
         element: box,
       });
     }
 
     for (const btn of searchButtons) {
+      this.markUsed(btn.ref);
       actions.push({
         ref: btn.ref,
         command: `click(${btn.ref})`,
-        description: btn.name || "Search button",
+        description: btn.name || "Search",
         element: btn,
       });
     }
@@ -152,21 +183,17 @@ export class ActionDiscoverer {
     };
   }
 
-  private discoverFormActions(elements: PageElement[], pageType: PageType): ActionGroup[] {
-    const alreadyHandledRefs = new Set<string>();
+  private discoverFormActions(elements: PageElement[]): ActionGroup[] {
     const inputFields = elements.filter(
       (e) =>
-        (e.role === "textbox" || e.role === "combobox" || e.role === "checkbox" || e.role === "radio") &&
-        e.type !== "password" &&
-        !e.name.toLowerCase().includes("search")
+        !this.isUsed(e.ref) &&
+        (e.role === "textbox" || e.role === "combobox" || e.role === "checkbox" || e.role === "radio")
     );
 
     if (inputFields.length < 2) return [];
 
-    const groups: ActionGroup[] = [];
-
     const formActions: DiscoveredAction[] = inputFields.map((field) => {
-      alreadyHandledRefs.add(field.ref);
+      this.markUsed(field.ref);
       const command =
         field.role === "checkbox" || field.role === "radio"
           ? `click(${field.ref})`
@@ -184,11 +211,13 @@ export class ActionDiscoverer {
 
     const submitButtons = elements.filter(
       (e) =>
+        !this.isUsed(e.ref) &&
         e.role === "button" &&
         /submit|send|save|create|update|confirm|apply|continue|next/i.test(e.name)
     );
 
     for (const btn of submitButtons) {
+      this.markUsed(btn.ref);
       formActions.push({
         ref: btn.ref,
         command: `click(${btn.ref})`,
@@ -197,39 +226,37 @@ export class ActionDiscoverer {
       });
     }
 
-    if (formActions.length > 0) {
-      groups.push({
-        id: "form_main",
-        label: "Form",
-        type: "form_submit",
-        elements: formActions,
-      });
-    }
-
-    return groups;
+    return [{
+      id: "form_main",
+      label: "Form",
+      type: "form_submit",
+      elements: formActions,
+    }];
   }
 
   private discoverNavigationActions(elements: PageElement[]): ActionGroup | null {
     const links = elements.filter(
-      (e) => e.role === "link" && e.name.trim().length > 0
+      (e) =>
+        !this.isUsed(e.ref) &&
+        e.role === "link" &&
+        e.name.trim().length > 1
     );
 
     if (links.length === 0) return null;
 
-    const prioritizedLinks = links
-      .filter((l) => {
-        const name = l.name.toLowerCase();
-        return !/^(#|javascript:|mailto:)/i.test(l.href ?? "") && name.length > 1;
-      })
+    const prioritized = links
+      .filter((l) => !/^(#|javascript:|mailto:)/i.test(l.href ?? ""))
       .slice(0, 15);
 
-    if (prioritizedLinks.length === 0) return null;
+    if (prioritized.length === 0) return null;
+
+    for (const link of prioritized) this.markUsed(link.ref);
 
     return {
       id: "navigation",
       label: "Navigation",
       type: "navigation",
-      elements: prioritizedLinks.map((link) => ({
+      elements: prioritized.map((link) => ({
         ref: link.ref,
         command: `click(${link.ref})`,
         description: link.name,
@@ -238,31 +265,21 @@ export class ActionDiscoverer {
     };
   }
 
-  private discoverButtonActions(
-    elements: PageElement[],
-    existingGroups: ActionGroup[]
-  ): ActionGroup | null {
-    const usedRefs = new Set<string>();
-    for (const group of existingGroups) {
-      for (const action of group.elements) {
-        usedRefs.add(action.ref);
-      }
-    }
-
-    const ungroupedButtons = elements.filter(
+  private discoverButtonActions(elements: PageElement[]): ActionGroup | null {
+    const ungrouped = elements.filter(
       (e) =>
+        !this.isUsed(e.ref) &&
         e.role === "button" &&
-        !usedRefs.has(e.ref) &&
         e.name.trim().length > 0
     );
 
-    if (ungroupedButtons.length === 0) return null;
+    if (ungrouped.length === 0) return null;
 
     return {
       id: "actions",
       label: "Other Actions",
       type: "button",
-      elements: ungroupedButtons.slice(0, 10).map((btn) => ({
+      elements: ungrouped.slice(0, 10).map((btn) => ({
         ref: btn.ref,
         command: `click(${btn.ref})`,
         description: btn.name,
