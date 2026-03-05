@@ -3,6 +3,10 @@ import { BrowserEngine } from "./browser/engine.js";
 import { DomAnalyzer } from "./intelligence/analyzer.js";
 import { ActionDiscoverer } from "./intelligence/actions.js";
 import { PageClassifier } from "./intelligence/classifier.js";
+import { PageDiffer } from "./intelligence/differ.js";
+import { SmartExtractor, type ExtractionTarget, type ExtractionResult } from "./intelligence/extractor.js";
+import { FlowGenerator, type ActionFlow } from "./intelligence/flows.js";
+import { IntentFilter_, type Intent } from "./intelligence/intent.js";
 import { TextRenderer, estimateTokens } from "./renderer/text.js";
 import type {
   BrowserConfig,
@@ -19,6 +23,10 @@ export class AgentBrowser {
   private classifier: PageClassifier;
   private discoverer: ActionDiscoverer;
   private renderer: TextRenderer;
+  private differ: PageDiffer;
+  private extractor: SmartExtractor;
+  private flowGenerator: FlowGenerator;
+  private intentFilter: IntentFilter_;
   private lastState: PageState | null = null;
 
   constructor(config: BrowserConfig = {}) {
@@ -27,6 +35,10 @@ export class AgentBrowser {
     this.classifier = new PageClassifier();
     this.discoverer = new ActionDiscoverer();
     this.renderer = new TextRenderer();
+    this.differ = new PageDiffer();
+    this.extractor = new SmartExtractor();
+    this.flowGenerator = new FlowGenerator();
+    this.intentFilter = new IntentFilter_();
   }
 
   async launch(): Promise<void> {
@@ -187,6 +199,84 @@ export class AgentBrowser {
     await this.engine.close();
   }
 
+  async snapshotWithIntent(intent: Intent): Promise<string> {
+    const start = Date.now();
+    const state = await this.buildPageState(start);
+    const filtered = this.intentFilter.filterByIntent(state, intent);
+    return this.renderer.render(filtered);
+  }
+
+  async diff(): Promise<string | null> {
+    const start = Date.now();
+    const state = await this.buildPageState(start);
+    const pageDiff = this.differ.computeDiff(state);
+    if (!pageDiff) return null;
+    return this.differ.renderDiff(pageDiff);
+  }
+
+  async extract(target: ExtractionTarget): Promise<ExtractionResult> {
+    const page = this.engine.getActivePage();
+    return this.extractor.extract(page, target);
+  }
+
+  async getFlows(): Promise<ActionFlow[]> {
+    if (!this.lastState) {
+      const start = Date.now();
+      await this.buildPageState(start);
+    }
+    return this.flowGenerator.generateFlows(this.lastState!);
+  }
+
+  async executeFlow(flowId: string, params: Record<string, string>): Promise<string> {
+    const flows = await this.getFlows();
+    const flow = flows.find((f) => f.id === flowId);
+    if (!flow) return `Flow "${flowId}" not found. Available: ${flows.map((f) => f.id).join(", ")}`;
+
+    const missing = flow.requiredParams.filter((p) => !params[p]);
+    if (missing.length > 0) return `Missing required params: ${missing.join(", ")}`;
+
+    const page = this.engine.getActivePage();
+    const results: string[] = [`Executing flow: ${flow.name}`];
+
+    for (const step of flow.steps) {
+      switch (step.action) {
+        case "fill": {
+          if (!step.ref || !step.paramKey) break;
+          const value = params[step.paramKey];
+          if (value) {
+            await this.fill(step.ref, value);
+            results.push(`Filled ${step.ref} with "${value}"`);
+          }
+          break;
+        }
+        case "click": {
+          if (!step.ref) break;
+          const clickResult = await this.click(step.ref);
+          results.push(`Clicked ${step.ref}: ${clickResult.success ? "ok" : "failed"}`);
+          break;
+        }
+        case "select": {
+          if (!step.ref || !step.paramKey) break;
+          const value = params[step.paramKey];
+          if (value) {
+            await this.select(step.ref, value);
+            results.push(`Selected "${value}" in ${step.ref}`);
+          }
+          break;
+        }
+        case "wait": {
+          await page.evaluate(() => new Promise<void>((r) => setTimeout(r, 1500)));
+          results.push("Waited for navigation");
+          break;
+        }
+      }
+    }
+
+    const snapshot = await this.snapshot();
+    results.push("\n" + snapshot);
+    return results.join("\n");
+  }
+
   getLastState(): PageState | null {
     return this.lastState;
   }
@@ -343,3 +433,8 @@ export type {
   ScrollResult,
   PageMeta,
 } from "./types.js";
+
+export type { ExtractionTarget, ExtractionResult } from "./intelligence/extractor.js";
+export type { ActionFlow, FlowStep } from "./intelligence/flows.js";
+export type { Intent } from "./intelligence/intent.js";
+export type { PageDiff } from "./intelligence/differ.js";

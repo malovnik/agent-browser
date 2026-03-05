@@ -231,6 +231,91 @@ export function createMcpServer(config: BrowserConfig = {}): McpServer {
   );
 
   server.tool(
+    "extract",
+    "Extract structured content from the current page. Targets: article_text, links, headings, images, table_data, metadata",
+    {
+      target: z.enum(["article_text", "links", "headings", "images", "table_data", "metadata"])
+        .describe("What to extract from the page"),
+    },
+    async ({ target }) => {
+      const b = await ensureBrowser();
+      const result = await b.extract(target);
+      const text = typeof result.data === "string"
+        ? result.data
+        : JSON.stringify(result.data, null, 2);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `[${target}] (~${result.tokenEstimate} tokens)\n\n${text}`,
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "snapshot_intent",
+    "Get a page snapshot filtered by agent intent. Only shows elements relevant to the specified intent, dramatically reducing tokens.",
+    {
+      intent: z.enum(["login", "search", "read_content", "fill_form", "navigate", "buy", "extract_data"])
+        .describe("Agent's current intent"),
+    },
+    async ({ intent }) => {
+      const b = await ensureBrowser();
+      const result = await b.snapshotWithIntent(intent);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "diff",
+    "Get only the changes since the last snapshot. Returns null on first call (needs a baseline). Much more token-efficient than full snapshots for monitoring page changes.",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const result = await b.diff();
+      return {
+        content: [{
+          type: "text" as const,
+          text: result ?? "No previous state to compare against. Call snapshot first to establish a baseline.",
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "get_flows",
+    "Auto-discover available multi-step workflows on the current page (login, search, form fill). Returns executable flow definitions with required parameters.",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const flows = await b.getFlows();
+      if (flows.length === 0) {
+        return { content: [{ type: "text" as const, text: "No multi-step flows detected on this page." }] };
+      }
+      const text = flows.map((f) => {
+        const params = f.requiredParams.length > 0 ? `\n  Required params: ${f.requiredParams.join(", ")}` : "";
+        const steps = f.steps.map((s, i) => `    ${i + 1}. ${s.action}${s.ref ? ` ${s.ref}` : ""} — ${s.description}`).join("\n");
+        return `[${f.id}] ${f.name}: ${f.description}${params}\n  Steps:\n${steps}`;
+      }).join("\n\n");
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  server.tool(
+    "execute_flow",
+    "Execute a discovered multi-step flow (login, search, form) with given parameters. Use get_flows first to see available flows and required params.",
+    {
+      flow_id: z.string().describe("Flow ID from get_flows (e.g. 'login', 'search', 'fill_form')"),
+      params: z.record(z.string()).describe("Key-value params for the flow (e.g. {email: '...', password: '...'})"),
+    },
+    async ({ flow_id, params }) => {
+      const b = await ensureBrowser();
+      const result = await b.executeFlow(flow_id, params);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
     "close_browser",
     "Close the browser completely",
     {},
