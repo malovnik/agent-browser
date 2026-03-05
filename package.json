@@ -1,0 +1,30 @@
+{
+  "name": "agent-browser",
+  "version": "0.1.0",
+  "description": "AI-first browser with semantic action discovery and token-optimized page representation",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agent-browser": "dist/bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/bin/cli.ts",
+    "start": "node dist/bin/cli.js",
+    "mcp": "tsx src/bin/cli.ts --mcp"
+  },
+  "keywords": ["browser", "ai", "agent", "mcp", "automation", "action-discovery"],
+  "author": "malovnik",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}

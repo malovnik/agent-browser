@@ -1,0 +1,253 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { AgentBrowser } from "../index.js";
+import type { BrowserConfig } from "../types.js";
+
+export function createMcpServer(config: BrowserConfig = {}): McpServer {
+  const server = new McpServer({
+    name: "agent-browser",
+    version: "0.1.0",
+  });
+
+  let browser: AgentBrowser | null = null;
+
+  async function ensureBrowser(): Promise<AgentBrowser> {
+    if (!browser) {
+      browser = new AgentBrowser(config);
+      await browser.launch();
+    }
+    return browser;
+  }
+
+  server.tool(
+    "navigate",
+    "Navigate to a URL and get a semantic page snapshot with discovered actions",
+    { url: z.string().describe("The URL to navigate to") },
+    async ({ url }) => {
+      const b = await ensureBrowser();
+      const result = await b.navigate(url);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "snapshot",
+    "Get the current page state with semantic action discovery. Returns page type, available actions grouped by category, and interactive elements.",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const result = await b.snapshot();
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "snapshot_compact",
+    "Get a compact page snapshot optimized for minimal token usage",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const result = await b.snapshotCompact();
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "click",
+    "Click an element by its ref (e.g. @e1, @e5). Use snapshot first to see available refs.",
+    { ref: z.string().describe("Element reference like @e1") },
+    async ({ ref }) => {
+      const b = await ensureBrowser();
+      const result = await b.click(ref);
+      let text = result.success
+        ? `Clicked ${ref} successfully.`
+        : `Failed to click ${ref}.`;
+      if (result.navigationOccurred) {
+        text += ` Navigated to: ${result.newUrl}`;
+        const snapshot = await b.snapshot();
+        text += "\n\n" + snapshot;
+      }
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  server.tool(
+    "fill",
+    "Fill a text input field by ref. Use snapshot to see available input refs.",
+    {
+      ref: z.string().describe("Element reference like @e1"),
+      value: z.string().describe("Text to type into the field"),
+    },
+    async ({ ref, value }) => {
+      const b = await ensureBrowser();
+      const result = await b.fill(ref, value);
+      const text = result.success
+        ? `Filled ${ref} with "${value}" (was: "${result.previousValue}")`
+        : `Failed to fill ${ref}`;
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  server.tool(
+    "select",
+    "Select an option in a dropdown by ref",
+    {
+      ref: z.string().describe("Element reference like @e1"),
+      value: z.string().describe("Option value or text to select"),
+    },
+    async ({ ref, value }) => {
+      const b = await ensureBrowser();
+      const result = await b.select(ref, value);
+      const text = result.success
+        ? `Selected "${value}" in ${ref}`
+        : `Failed to select in ${ref}`;
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  server.tool(
+    "scroll",
+    "Scroll the page up or down",
+    { direction: z.enum(["up", "down"]).describe("Scroll direction") },
+    async ({ direction }) => {
+      const b = await ensureBrowser();
+      const result = await b.scroll(direction);
+      const percent = Math.round((result.scrolledTo / (result.pageHeight - result.viewportHeight)) * 100);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Scrolled ${direction}. Position: ${percent}% (${result.scrolledTo}px / ${result.pageHeight}px)`,
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "screenshot",
+    "Take a visual screenshot of the current page (use sparingly, prefer snapshot for efficiency)",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const buffer = await b.screenshot();
+      return {
+        content: [{
+          type: "image" as const,
+          data: buffer.toString("base64"),
+          mimeType: "image/png",
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "evaluate",
+    "Execute JavaScript in the browser and return the result",
+    { expression: z.string().describe("JavaScript expression to evaluate") },
+    async ({ expression }) => {
+      const b = await ensureBrowser();
+      const result = await b.evaluate(expression);
+      return {
+        content: [{
+          type: "text" as const,
+          text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "back",
+    "Navigate back in browser history and return page snapshot",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const result = await b.back();
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "forward",
+    "Navigate forward in browser history and return page snapshot",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const result = await b.forward();
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "tabs",
+    "List all open browser tabs",
+    {},
+    async () => {
+      const b = await ensureBrowser();
+      const tabList = await b.tabs();
+      const text = tabList
+        .map((t) => `${t.active ? ">" : " "} [${t.id}] ${t.title} (${t.url})`)
+        .join("\n");
+      return { content: [{ type: "text" as const, text: text || "No tabs open" }] };
+    }
+  );
+
+  server.tool(
+    "new_tab",
+    "Open a new browser tab, optionally navigating to a URL",
+    { url: z.string().optional().describe("URL to open in the new tab") },
+    async ({ url }) => {
+      const b = await ensureBrowser();
+      const tabId = await b.newTab(url);
+      let text = `New tab created: ${tabId}`;
+      if (url) {
+        const snapshot = await b.snapshot();
+        text += "\n\n" + snapshot;
+      }
+      return { content: [{ type: "text" as const, text }] };
+    }
+  );
+
+  server.tool(
+    "switch_tab",
+    "Switch to a different browser tab by ID",
+    { tab_id: z.string().describe("Tab ID from tabs() output") },
+    async ({ tab_id }) => {
+      const b = await ensureBrowser();
+      const result = await b.switchTab(tab_id);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "close_tab",
+    "Close a browser tab by ID",
+    { tab_id: z.string().describe("Tab ID to close") },
+    async ({ tab_id }) => {
+      const b = await ensureBrowser();
+      await b.closeTab(tab_id);
+      return { content: [{ type: "text" as const, text: `Tab ${tab_id} closed` }] };
+    }
+  );
+
+  server.tool(
+    "close_browser",
+    "Close the browser completely",
+    {},
+    async () => {
+      if (browser) {
+        await browser.close();
+        browser = null;
+      }
+      return { content: [{ type: "text" as const, text: "Browser closed" }] };
+    }
+  );
+
+  return server;
+}
+
+export async function startMcpServer(config: BrowserConfig = {}): Promise<void> {
+  const server = createMcpServer(config);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
