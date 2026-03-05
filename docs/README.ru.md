@@ -103,13 +103,12 @@ npm run build
 
 agent-browser работает как [MCP](https://modelcontextprotocol.io/)-сервер через stdio. Любой MCP-совместимый клиент может подключиться.
 
-### Claude Desktop (ClawBot)
+### Claude Desktop
 
 Отредактируй конфиг:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -138,9 +137,32 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts --headed
 ```
 
+### OpenClaw (ClawBot)
+
+Добавь в `openclaw.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+Или через CLI:
+
+```bash
+openclaw config set mcpServers.agent-browser.command "npx"
+openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]'
+```
+
 ### Cursor
 
-Создай или отредактируй `~/.cursor/mcp.json`:
+Создай или отредактируй `~/.cursor/mcp.json` (глобальный) или `.cursor/mcp.json` (для проекта):
 
 ```json
 {
@@ -152,6 +174,8 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
   }
 }
 ```
+
+Или добавь через Cursor Settings > Tools & MCP > New MCP Server.
 
 ### VS Code Copilot (1.99+)
 
@@ -171,7 +195,7 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 
 ### Cline (VS Code)
 
-Открой настройки MCP в Cline (`Cline: MCP Servers` в командной палитре) и добавь:
+Нажми иконку MCP Servers в панели Cline > Configure > "Configure MCP Servers" и добавь:
 
 ```json
 {
@@ -187,7 +211,7 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 
 ### Windsurf
 
-Отредактируй `~/.codeium/windsurf/mcp_config.json`:
+Отредактируй `~/.codeium/windsurf/mcp_config.json` или открой через иконку MCPs > Configure в панели Cascade:
 
 ```json
 {
@@ -202,23 +226,20 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 
 ### Continue.dev
 
-Отредактируй `~/.continue/config.json`:
+Создай JSON-конфиг `.continue/mcpServers/agent-browser.json` в рабочей директории:
 
 ```json
 {
-  "experimental": {
-    "modelContextProtocolServers": [
-      {
-        "transport": {
-          "type": "stdio",
-          "command": "npx",
-          "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
-        }
-      }
-    ]
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+    }
   }
 }
 ```
+
+Continue автоматически подхватывает JSON-конфиги из `.continue/mcpServers/`. MCP-инструменты доступны в режиме agent.
 
 ### Любой MCP-клиент
 

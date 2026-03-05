@@ -103,13 +103,12 @@ See [Integration](#integration) below for your specific tool.
 
 agent-browser runs as an [MCP](https://modelcontextprotocol.io/) server over stdio. Any MCP-compatible client can connect to it.
 
-### Claude Desktop (ClawBot)
+### Claude Desktop
 
 Edit the config file:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -138,9 +137,32 @@ With visible browser window:
 claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts --headed
 ```
 
+### OpenClaw (ClawBot)
+
+Add to your `openclaw.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+Or via CLI:
+
+```bash
+openclaw config set mcpServers.agent-browser.command "npx"
+openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]'
+```
+
 ### Cursor
 
-Create or edit `~/.cursor/mcp.json`:
+Create or edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-scoped):
 
 ```json
 {
@@ -152,6 +174,8 @@ Create or edit `~/.cursor/mcp.json`:
   }
 }
 ```
+
+Or add via Cursor Settings > Tools & MCP > New MCP Server.
 
 ### VS Code Copilot (1.99+)
 
@@ -171,7 +195,7 @@ Create `.vscode/mcp.json` in your project:
 
 ### Cline (VS Code)
 
-Open Cline MCP settings (`Cline: MCP Servers` in command palette) and add:
+Click the MCP Servers icon in the Cline pane > Configure > "Configure MCP Servers" and add:
 
 ```json
 {
@@ -187,7 +211,7 @@ Open Cline MCP settings (`Cline: MCP Servers` in command palette) and add:
 
 ### Windsurf
 
-Edit `~/.codeium/windsurf/mcp_config.json`:
+Edit `~/.codeium/windsurf/mcp_config.json` or open it via the MCPs icon > Configure in the Cascade panel:
 
 ```json
 {
@@ -202,23 +226,20 @@ Edit `~/.codeium/windsurf/mcp_config.json`:
 
 ### Continue.dev
 
-Edit `~/.continue/config.json`:
+Create a JSON config file in `.continue/mcpServers/agent-browser.json` in your workspace:
 
 ```json
 {
-  "experimental": {
-    "modelContextProtocolServers": [
-      {
-        "transport": {
-          "type": "stdio",
-          "command": "npx",
-          "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
-        }
-      }
-    ]
+  "mcpServers": {
+    "agent-browser": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+    }
   }
 }
 ```
+
+Continue automatically picks up JSON configs from `.continue/mcpServers/` directory. MCP tools are available in agent mode.
 
 ### Any MCP Client
 
