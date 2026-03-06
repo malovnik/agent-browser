@@ -198,7 +198,9 @@ export class BrowserEngine {
 
   async evaluate<T>(expression: string): Promise<T> {
     const page = this.getActivePage();
-    return page.evaluate(expression) as Promise<T>;
+    const needsWrap = /\b(const|let|class)\s/.test(expression) && !/^\s*\(/.test(expression);
+    const wrapped = needsWrap ? `(() => {\n${expression}\n})()` : expression;
+    return page.evaluate(wrapped) as Promise<T>;
   }
 
   async close(): Promise<void> {

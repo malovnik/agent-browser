@@ -7,6 +7,7 @@ export type PageType =
   | "form"
   | "navigation"
   | "article"
+  | "feed"
   | "error"
   | "unknown";
 
@@ -67,6 +68,7 @@ export interface PageMeta {
   totalElements: number;
   interactiveElements: number;
   loadTimeMs: number;
+  contentPreview?: string;
 }
 
 export interface BrowserConfig {

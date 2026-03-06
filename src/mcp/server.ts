@@ -7,7 +7,7 @@ import type { BrowserConfig } from "../types.js";
 export function createMcpServer(config: BrowserConfig = {}): McpServer {
   const server = new McpServer({
     name: "agent-browser",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   let browser: AgentBrowser | null = null;
@@ -232,9 +232,9 @@ export function createMcpServer(config: BrowserConfig = {}): McpServer {
 
   server.tool(
     "extract",
-    "Extract structured content from the current page. Targets: article_text, links, headings, images, table_data, metadata",
+    "Extract structured content from the current page. Targets: article_text, links, headings, images, table_data, metadata, feed_items",
     {
-      target: z.enum(["article_text", "links", "headings", "images", "table_data", "metadata"])
+      target: z.enum(["article_text", "links", "headings", "images", "table_data", "metadata", "feed_items"])
         .describe("What to extract from the page"),
     },
     async ({ target }) => {

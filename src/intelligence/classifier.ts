@@ -15,7 +15,9 @@ const URL_PATTERNS: Array<{ pattern: RegExp; type: PageType; weight: number }> =
   { pattern: /\/(product|item|p)\/[\w-]+/i, type: "product_detail", weight: 0.5 },
   { pattern: /\/(cart|checkout|payment|order)\b/i, type: "checkout", weight: 0.6 },
   { pattern: /\/(contact|feedback|apply|form)\b/i, type: "form", weight: 0.4 },
-  { pattern: /\/(article|post|blog|news|story)\b/i, type: "article", weight: 0.4 },
+  { pattern: /\/(article|post|blog|news|story)\/[\w-]+/i, type: "article", weight: 0.5 },
+  { pattern: /\/(feed|timeline|hot|new|fresh|popular|trending|top|best|rising)\b/i, type: "feed", weight: 0.5 },
+  { pattern: /^https?:\/\/(www\.)?(reddit|pikabu|habr|hackernews|lobste\.rs|lemmy)\./i, type: "feed", weight: 0.4 },
   { pattern: /\/(404|error|not-found)\b/i, type: "error", weight: 0.7 },
 ];
 
@@ -63,6 +65,7 @@ export class PageClassifier {
       { keywords: ["search", "results for", "find"], type: "search", weight: 0.4 },
       { keywords: ["cart", "checkout", "payment", "order"], type: "checkout", weight: 0.5 },
       { keywords: ["404", "not found", "error", "page not found"], type: "error", weight: 0.6 },
+      { keywords: ["feed", "timeline", "trending", "hot", "горячее", "лучшее", "свежее", "новое"], type: "feed", weight: 0.4 },
     ];
 
     for (const { keywords, type, weight } of titleSignals) {
@@ -111,6 +114,13 @@ export class PageClassifier {
     const headings = elements.filter((e) => e.role === "heading");
     if (headings.length >= 1 && links.length < 10 && inputs.length === 0) {
       signals.push({ pageType: "article", confidence: 0.3, reason: "Heading-dominant, few interactive elements" });
+    }
+
+    if (headings.length >= 3 && links.length > 20 && inputs.length < 3) {
+      signals.push({ pageType: "feed", confidence: 0.5, reason: "Multiple headings with many links — feed pattern" });
+    }
+    if (buttons.length > 10 && headings.length >= 3 && links.length > 10) {
+      signals.push({ pageType: "feed", confidence: 0.3, reason: "Many buttons + headings + links — interactive feed" });
     }
 
     const priceIndicators = elements.filter(

@@ -6,7 +6,8 @@ export type ExtractionTarget =
   | "headings"
   | "images"
   | "table_data"
-  | "metadata";
+  | "metadata"
+  | "feed_items";
 
 export interface ExtractionResult {
   target: ExtractionTarget;
@@ -29,42 +30,106 @@ export class SmartExtractor {
         return this.extractTableData(page);
       case "metadata":
         return this.extractMetadata(page);
+      case "feed_items":
+        return this.extractFeedItems(page);
     }
   }
 
   private async extractArticleText(page: Page): Promise<ExtractionResult> {
     const text = await page.evaluate(() => {
-      const selectors = [
-        "article",
-        '[role="article"]',
-        ".post-content",
-        ".article-content",
-        ".story__content",
-        ".entry-content",
-        "main article",
-        ".content-body",
-        ".post-body",
-      ];
+      const EXCLUDE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "SVG"]);
+      const EXCLUDE_ROLES = new Set(["navigation", "banner", "contentinfo", "complementary", "search"]);
 
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && el.textContent && el.textContent.trim().length > 100) {
-          return el.textContent.trim();
+      function isExcluded(el: Element): boolean {
+        if (EXCLUDE_TAGS.has(el.tagName)) return true;
+        const role = el.getAttribute("role");
+        if (role && EXCLUDE_ROLES.has(role)) return true;
+        const cls = el.className?.toString?.() ?? "";
+        if (/\b(sidebar|nav|footer|header|menu|advert|promo|cookie|popup|modal|banner)\b/i.test(cls)) return true;
+        const id = el.id ?? "";
+        if (/\b(sidebar|nav|footer|header|menu|ad)\b/i.test(id)) return true;
+        return false;
+      }
+
+      function getTextDensity(el: Element): number {
+        const text = el.textContent?.trim() ?? "";
+        const html = el.innerHTML ?? "";
+        if (html.length === 0) return 0;
+        return text.length / html.length;
+      }
+
+      function scoreBlock(el: Element): number {
+        const text = el.textContent?.trim() ?? "";
+        if (text.length < 50) return 0;
+
+        let score = text.length;
+        const density = getTextDensity(el);
+        score *= density;
+
+        const paragraphs = el.querySelectorAll("p");
+        score += paragraphs.length * 50;
+
+        const tag = el.tagName.toLowerCase();
+        if (tag === "article" || el.getAttribute("role") === "article") score *= 2;
+        if (tag === "main" || el.getAttribute("role") === "main") score *= 1.5;
+
+        const links = el.querySelectorAll("a");
+        const linkTextLen = Array.from(links).reduce((sum, a) => sum + (a.textContent?.length ?? 0), 0);
+        if (text.length > 0 && linkTextLen / text.length > 0.5) score *= 0.3;
+
+        return score;
+      }
+
+      const candidates = document.querySelectorAll(
+        "article, [role='article'], main, [role='main'], section, .post, .story, .entry, .article, .content, .post-content, .story-block, .page-content, div[class*='content'], div[class*='post'], div[class*='story'], div[class*='article']"
+      );
+
+      let bestEl: Element | null = null;
+      let bestScore = 0;
+
+      for (const el of candidates) {
+        if (isExcluded(el)) continue;
+        let excluded = false;
+        let parent = el.parentElement;
+        while (parent && parent !== document.body) {
+          if (isExcluded(parent)) { excluded = true; break; }
+          parent = parent.parentElement;
+        }
+        if (excluded) continue;
+
+        const score = scoreBlock(el);
+        if (score > bestScore) {
+          bestScore = score;
+          bestEl = el;
         }
       }
 
-      const paragraphs = document.querySelectorAll("main p, article p, .content p");
-      if (paragraphs.length > 0) {
-        return Array.from(paragraphs)
-          .map((p) => p.textContent?.trim())
-          .filter(Boolean)
-          .join("\n\n");
+      if (bestEl) {
+        const walker = document.createTreeWalker(bestEl, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            const parent = node.parentElement;
+            if (!parent) return NodeFilter.FILTER_REJECT;
+            if (EXCLUDE_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+            const text = node.textContent?.trim();
+            if (!text || text.length < 2) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+
+        const parts: string[] = [];
+        let totalLen = 0;
+        while (walker.nextNode() && totalLen < 10000) {
+          const t = walker.currentNode.textContent?.trim() ?? "";
+          if (t.length > 0) {
+            parts.push(t);
+            totalLen += t.length;
+          }
+        }
+        return parts.join(" ").replace(/\s+/g, " ").substring(0, 10000);
       }
 
-      const main = document.querySelector("main, [role=main], #content, .content");
-      if (main) return main.textContent?.trim() ?? "";
-
-      return document.body.innerText.substring(0, 5000);
+      const bodyText = document.body.innerText ?? "";
+      return bodyText.substring(0, 5000);
     });
 
     return {
@@ -76,14 +141,41 @@ export class SmartExtractor {
 
   private async extractLinks(page: Page): Promise<ExtractionResult> {
     const links = await page.evaluate(() => {
-      const mainArea = document.querySelector("main, [role=main], article, .content") ?? document.body;
+      function getMainArea(): Element {
+        const candidates = [
+          document.querySelector("main"),
+          document.querySelector("[role='main']"),
+          document.querySelector("article"),
+        ].filter(Boolean) as Element[];
+
+        for (const c of candidates) {
+          const anchors = c.querySelectorAll("a[href]");
+          if (anchors.length >= 5) return c;
+        }
+
+        return document.body;
+      }
+
+      const mainArea = getMainArea();
       const anchors = mainArea.querySelectorAll("a[href]");
+      const seen = new Set<string>();
+
       return Array.from(anchors)
-        .map((a) => ({
-          text: a.textContent?.trim() ?? "",
-          href: (a as HTMLAnchorElement).href,
-        }))
-        .filter((l) => l.text.length > 0 && !l.href.startsWith("javascript:"))
+        .map((a) => {
+          const anchor = a as HTMLAnchorElement;
+          return {
+            text: a.textContent?.trim().replace(/\s+/g, " ") ?? "",
+            href: anchor.href,
+          };
+        })
+        .filter((l) => {
+          if (l.text.length === 0) return false;
+          if (l.href.startsWith("javascript:")) return false;
+          if (l.href === "#" || l.href.endsWith("#")) return false;
+          if (seen.has(l.href)) return false;
+          seen.add(l.href);
+          return true;
+        })
         .slice(0, 50);
     });
 
@@ -191,6 +283,115 @@ export class SmartExtractor {
     return {
       target: "metadata",
       data: meta,
+      tokenEstimate: Math.ceil(text.length / 4),
+    };
+  }
+
+  private async extractFeedItems(page: Page): Promise<ExtractionResult> {
+    const items = await page.evaluate(() => {
+      function findRepeatingContainers(): Element[] {
+        const classCount = new Map<string, Element[]>();
+
+        const allElements = document.querySelectorAll("article, [data-story-id], [data-post-id], [data-id], .post, .story, .card, .item, .entry, .feed-item, .thread, .topic, .result");
+        for (const el of allElements) {
+          const key = `${el.tagName}.${Array.from(el.classList).sort().join(".")}`;
+          if (!classCount.has(key)) classCount.set(key, []);
+          classCount.get(key)!.push(el);
+        }
+
+        let bestGroup: Element[] = [];
+        for (const [, group] of classCount) {
+          if (group.length >= 3 && group.length > bestGroup.length) {
+            bestGroup = group;
+          }
+        }
+
+        if (bestGroup.length >= 3) return bestGroup;
+
+        const parents = new Map<Element, { children: Element[]; tag: string; cls: string }>();
+        const contentElements = document.querySelectorAll("main *, [role='main'] *, body > div > div *");
+        for (const el of contentElements) {
+          const parent = el.parentElement;
+          if (!parent) continue;
+          const childTag = el.tagName;
+          const childCls = Array.from(el.classList).sort().join(".");
+          if (!parents.has(parent)) parents.set(parent, { children: [], tag: childTag, cls: childCls });
+          const info = parents.get(parent)!;
+          if (info.tag === childTag && info.cls === childCls) {
+            info.children.push(el);
+          }
+        }
+
+        for (const [, info] of parents) {
+          if (info.children.length >= 3 && info.children.length > bestGroup.length) {
+            bestGroup = info.children;
+          }
+        }
+
+        return bestGroup;
+      }
+
+      function extractItem(el: Element): {
+        title: string;
+        url: string;
+        preview: string;
+        stats: string;
+      } | null {
+        const heading = el.querySelector("h1, h2, h3, h4, h5, h6, [class*='title'] a, a[class*='title']");
+        const firstLink = el.querySelector("a[href]") as HTMLAnchorElement | null;
+
+        const titleEl = heading ?? firstLink;
+        const title = titleEl?.textContent?.trim().replace(/\s+/g, " ") ?? "";
+        if (title.length === 0) return null;
+
+        let url = "";
+        if (titleEl && titleEl.tagName === "A") {
+          url = (titleEl as HTMLAnchorElement).href;
+        } else if (titleEl) {
+          const innerLink = titleEl.querySelector("a[href]") as HTMLAnchorElement | null;
+          url = innerLink?.href ?? firstLink?.href ?? "";
+        } else if (firstLink) {
+          url = firstLink.href;
+        }
+
+        const fullText = el.textContent?.trim().replace(/\s+/g, " ") ?? "";
+        const preview = fullText.substring(0, 200);
+
+        const numbers = fullText.match(/\d[\d.,KkМм]*(?:\s*(?:комментар|comment|like|view|просмотр|рейтинг|upvote|point|share))?/gi);
+        const stats = numbers ? numbers.slice(0, 4).join(" | ") : "";
+
+        return { title: title.substring(0, 200), url, preview, stats };
+      }
+
+      const containers = findRepeatingContainers();
+      if (containers.length === 0) {
+        return { items: [], count: 0 };
+      }
+
+      const items: Array<{ title: string; url: string; preview: string; stats: string }> = [];
+      for (const el of containers.slice(0, 30)) {
+        const item = extractItem(el);
+        if (item && item.title.length > 3) {
+          items.push(item);
+        }
+      }
+
+      return { items: items.slice(0, 20), count: containers.length };
+    });
+
+    const feedItems = items.items as Array<{ title: string; url: string; preview: string; stats: string }>;
+    const text = feedItems
+      .map((item, i) => {
+        let line = `${i + 1}. ${item.title}`;
+        if (item.url) line += `\n   ${item.url}`;
+        if (item.stats) line += `\n   [${item.stats}]`;
+        return line;
+      })
+      .join("\n");
+
+    return {
+      target: "feed_items",
+      data: items,
       tokenEstimate: Math.ceil(text.length / 4),
     };
   }

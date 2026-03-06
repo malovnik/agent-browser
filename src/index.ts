@@ -301,6 +301,36 @@ export class AgentBrowser {
         e.role === "radio"
     );
 
+    let contentPreview: string | undefined;
+    if (pageType === "article" || pageType === "feed") {
+      try {
+        contentPreview = await page.evaluate(() => {
+          const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT"]);
+          const main = document.querySelector("article, main, [role='main'], [role='article']") ?? document.body;
+          const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+              const p = node.parentElement;
+              if (!p) return NodeFilter.FILTER_REJECT;
+              if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+              const t = node.textContent?.trim();
+              if (!t || t.length < 3) return NodeFilter.FILTER_REJECT;
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          });
+          const parts: string[] = [];
+          let len = 0;
+          while (walker.nextNode() && len < 500) {
+            const t = walker.currentNode.textContent?.trim() ?? "";
+            parts.push(t);
+            len += t.length;
+          }
+          return parts.join(" ").replace(/\s+/g, " ").substring(0, 500);
+        });
+      } catch {
+        contentPreview = undefined;
+      }
+    }
+
     const state: PageState = {
       url,
       title,
@@ -312,6 +342,7 @@ export class AgentBrowser {
         totalElements: elements.length,
         interactiveElements: interactiveElements.length,
         loadTimeMs: Date.now() - startTime,
+        contentPreview,
       },
     };
 

@@ -24,6 +24,12 @@ export class TextRenderer {
       "",
     ];
 
+    if (state.meta.contentPreview) {
+      lines.push(`--- Content Preview ---`);
+      lines.push(state.meta.contentPreview);
+      lines.push("");
+    }
+
     for (const group of state.actionGroups) {
       for (const action of group.elements) {
         lines.push(`  ${action.command} — ${action.description}`);
@@ -62,10 +68,16 @@ export class TextRenderer {
   }
 
   private renderMeta(state: PageState): string {
-    return [
+    const lines = [
       "=== META ===",
       `Elements: ${state.meta.totalElements} | Interactive: ${state.meta.interactiveElements} | Tokens: ~${state.meta.tokenEstimate}`,
-    ].join("\n");
+    ];
+    if (state.meta.contentPreview) {
+      lines.push("");
+      lines.push("=== CONTENT PREVIEW ===");
+      lines.push(state.meta.contentPreview);
+    }
+    return lines.join("\n");
   }
 }
 
