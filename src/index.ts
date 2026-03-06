@@ -137,9 +137,10 @@ export class AgentBrowser {
     }
   }
 
-  async scroll(direction: "up" | "down"): Promise<ScrollResult> {
+  async scroll(direction: "up" | "down", amount?: number): Promise<ScrollResult> {
     const page = this.engine.getActivePage();
-    const delta = direction === "down" ? 600 : -600;
+    const pixels = amount ?? 600;
+    const delta = direction === "down" ? pixels : -pixels;
 
     const result = await page.evaluate((d: number) => {
       window.scrollBy(0, d);
@@ -306,12 +307,28 @@ export class AgentBrowser {
       try {
         contentPreview = await page.evaluate(() => {
           const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT"]);
-          const main = document.querySelector("article, main, [role='main'], [role='article']") ?? document.body;
-          const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
-            acceptNode(node) {
+          const SKIP_CLS = /\b(sidebar|nav|footer|header|menu|advert|banner)\b/i;
+
+          const candidates = document.querySelectorAll(
+            "article, main, [role='main'], [role='article'], .post, .content, .post-content, .entry-content, .story, td.postcolor"
+          );
+          let contentRoot: Element = document.body;
+          let bestLen = 0;
+          for (const el of candidates) {
+            if (SKIP.has(el.tagName)) continue;
+            const text = el.textContent?.trim() ?? "";
+            if (text.length > bestLen) {
+              bestLen = text.length;
+              contentRoot = el;
+            }
+          }
+
+          const walker = document.createTreeWalker(contentRoot, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
               const p = node.parentElement;
               if (!p) return NodeFilter.FILTER_REJECT;
               if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+              if (SKIP_CLS.test(p.className?.toString?.() ?? "")) return NodeFilter.FILTER_REJECT;
               const t = node.textContent?.trim();
               if (!t || t.length < 3) return NodeFilter.FILTER_REJECT;
               return NodeFilter.FILTER_ACCEPT;

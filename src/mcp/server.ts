@@ -7,7 +7,7 @@ import type { BrowserConfig } from "../types.js";
 export function createMcpServer(config: BrowserConfig = {}): McpServer {
   const server = new McpServer({
     name: "agent-browser",
-    version: "0.2.0",
+    version: "0.2.1",
   });
 
   let browser: AgentBrowser | null = null;
@@ -108,11 +108,14 @@ export function createMcpServer(config: BrowserConfig = {}): McpServer {
 
   server.tool(
     "scroll",
-    "Scroll the page up or down",
-    { direction: z.enum(["up", "down"]).describe("Scroll direction") },
-    async ({ direction }) => {
+    "Scroll the page up or down. Default 600px, use amount for larger scrolls (e.g. 2000 for ~3 pages).",
+    {
+      direction: z.enum(["up", "down"]).describe("Scroll direction"),
+      amount: z.number().optional().describe("Pixels to scroll (default 600)"),
+    },
+    async ({ direction, amount }) => {
       const b = await ensureBrowser();
-      const result = await b.scroll(direction);
+      const result = await b.scroll(direction, amount);
       const percent = Math.round((result.scrolledTo / (result.pageHeight - result.viewportHeight)) * 100);
       return {
         content: [{

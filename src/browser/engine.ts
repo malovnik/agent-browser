@@ -47,6 +47,7 @@ export class BrowserEngine {
     if (this.config.defaultViewport) {
       await realPage.setViewport(this.config.defaultViewport);
     }
+    await this.injectPagePolyfills(realPage);
 
     const id = this.generatePageId();
     this.pages.set(id, realPage);
@@ -86,10 +87,20 @@ export class BrowserEngine {
     await this.ensureBrowser();
     const page = this.getActivePage();
 
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
-    });
+    try {
+      await page.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+    } catch (err: unknown) {
+      const isTimeout = err instanceof Error && err.message.includes("timeout");
+      if (!isTimeout) throw err;
+    }
+
+    const title = await page.title();
+    if (title === "Just a moment...") {
+      await this.waitForCloudflare(page);
+    }
 
     await this.waitForStable(page);
     return page;
@@ -214,6 +225,15 @@ export class BrowserEngine {
     }
   }
 
+  private async waitForCloudflare(page: Page, timeout = 60_000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const title = await page.title();
+      if (title !== "Just a moment...") return;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
   private generatePageId(): string {
     return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -222,10 +242,16 @@ export class BrowserEngine {
     if (target.type() === "page") {
       const page = await target.page();
       if (page) {
+        await this.injectPagePolyfills(page);
         const id = this.generatePageId();
         this.pages.set(id, page);
       }
     }
+  }
+
+  private async injectPagePolyfills(page: Page): Promise<void> {
+    await page.evaluateOnNewDocument("if(typeof __name==='undefined'){window.__name=(fn)=>fn}");
+    await page.evaluate("if(typeof __name==='undefined'){window.__name=function(fn){return fn}}");
   }
 
   private handleDestroyedTarget(target: Target): void {

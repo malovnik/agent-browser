@@ -40,7 +40,7 @@ export class SmartExtractor {
       const EXCLUDE_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "SVG"]);
       const EXCLUDE_ROLES = new Set(["navigation", "banner", "contentinfo", "complementary", "search"]);
 
-      function isExcluded(el: Element): boolean {
+      const isExcluded = (el: Element): boolean => {
         if (EXCLUDE_TAGS.has(el.tagName)) return true;
         const role = el.getAttribute("role");
         if (role && EXCLUDE_ROLES.has(role)) return true;
@@ -49,16 +49,16 @@ export class SmartExtractor {
         const id = el.id ?? "";
         if (/\b(sidebar|nav|footer|header|menu|ad)\b/i.test(id)) return true;
         return false;
-      }
+      };
 
-      function getTextDensity(el: Element): number {
+      const getTextDensity = (el: Element): number => {
         const text = el.textContent?.trim() ?? "";
         const html = el.innerHTML ?? "";
         if (html.length === 0) return 0;
         return text.length / html.length;
-      }
+      };
 
-      function scoreBlock(el: Element): number {
+      const scoreBlock = (el: Element): number => {
         const text = el.textContent?.trim() ?? "";
         if (text.length < 50) return 0;
 
@@ -78,7 +78,7 @@ export class SmartExtractor {
         if (text.length > 0 && linkTextLen / text.length > 0.5) score *= 0.3;
 
         return score;
-      }
+      };
 
       const candidates = document.querySelectorAll(
         "article, [role='article'], main, [role='main'], section, .post, .story, .entry, .article, .content, .post-content, .story-block, .page-content, div[class*='content'], div[class*='post'], div[class*='story'], div[class*='article']"
@@ -106,7 +106,7 @@ export class SmartExtractor {
 
       if (bestEl) {
         const walker = document.createTreeWalker(bestEl, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
+          acceptNode: (node) => {
             const parent = node.parentElement;
             if (!parent) return NodeFilter.FILTER_REJECT;
             if (EXCLUDE_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
@@ -141,7 +141,7 @@ export class SmartExtractor {
 
   private async extractLinks(page: Page): Promise<ExtractionResult> {
     const links = await page.evaluate(() => {
-      function getMainArea(): Element {
+      const getMainArea = (): Element => {
         const candidates = [
           document.querySelector("main"),
           document.querySelector("[role='main']"),
@@ -154,7 +154,7 @@ export class SmartExtractor {
         }
 
         return document.body;
-      }
+      };
 
       const mainArea = getMainArea();
       const anchors = mainArea.querySelectorAll("a[href]");
@@ -289,7 +289,7 @@ export class SmartExtractor {
 
   private async extractFeedItems(page: Page): Promise<ExtractionResult> {
     const items = await page.evaluate(() => {
-      function findRepeatingContainers(): Element[] {
+      const findRepeatingContainers = (): Element[] => {
         const classCount = new Map<string, Element[]>();
 
         const allElements = document.querySelectorAll("article, [data-story-id], [data-post-id], [data-id], .post, .story, .card, .item, .entry, .feed-item, .thread, .topic, .result");
@@ -329,14 +329,14 @@ export class SmartExtractor {
         }
 
         return bestGroup;
-      }
+      };
 
-      function extractItem(el: Element): {
+      const extractItem = (el: Element): {
         title: string;
         url: string;
         preview: string;
         stats: string;
-      } | null {
+      } | null => {
         const heading = el.querySelector("h1, h2, h3, h4, h5, h6, [class*='title'] a, a[class*='title']");
         const firstLink = el.querySelector("a[href]") as HTMLAnchorElement | null;
 
@@ -361,7 +361,7 @@ export class SmartExtractor {
         const stats = numbers ? numbers.slice(0, 4).join(" | ") : "";
 
         return { title: title.substring(0, 200), url, preview, stats };
-      }
+      };
 
       const containers = findRepeatingContainers();
       if (containers.length === 0) {
