@@ -1,41 +1,10 @@
-import { existsSync } from "node:fs";
-import puppeteerExtra from "puppeteer-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import {
+import { connect as connectReal } from "puppeteer-real-browser";
+import puppeteerCore, {
   type Browser,
   type Page,
   type Target,
 } from "puppeteer-core";
 import type { BrowserConfig, TabInfo } from "../types.js";
-
-puppeteerExtra.use(StealthPlugin());
-
-const DEFAULT_CHROME_PATHS: Record<string, string[]> = {
-  darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-  ],
-  linux: [
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-    "/snap/bin/chromium",
-  ],
-  win32: [
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  ],
-};
-
-function findChrome(): string | undefined {
-  const candidates = DEFAULT_CHROME_PATHS[process.platform] ?? [];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
 
 export class BrowserEngine {
   private browser: Browser | null = null;
@@ -54,19 +23,10 @@ export class BrowserEngine {
   async launch(): Promise<void> {
     if (this.browser) return;
 
-    const executablePath = this.config.executablePath ?? findChrome();
-    if (!executablePath) {
-      throw new Error(
-        "Chrome/Chromium not found. Set executablePath in config or install Chrome."
-      );
-    }
-
     const args = [
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
-      "--disable-extensions",
-      "--disable-blink-features=AutomationControlled",
       ...(this.config.args ?? []),
     ];
 
@@ -74,20 +34,23 @@ export class BrowserEngine {
       args.push(`--user-data-dir=${this.config.userDataDir}`);
     }
 
-    this.browser = await puppeteerExtra.launch({
-      executablePath,
-      headless: this.config.headless ? "new" : false,
-      defaultViewport: this.config.defaultViewport,
+    const { browser, page } = await connectReal({
+      headless: this.config.headless as boolean,
+      turnstile: true,
       args,
-    }) as unknown as Browser;
+      disableXvfb: true,
+    });
 
-    const existingPages = await this.browser.pages();
-    if (existingPages.length > 0) {
-      const page = existingPages[0];
-      const id = this.generatePageId();
-      this.pages.set(id, page);
-      this.activePageId = id;
+    this.browser = browser as unknown as Browser;
+
+    const realPage = page as unknown as Page;
+    if (this.config.defaultViewport) {
+      await realPage.setViewport(this.config.defaultViewport);
     }
+
+    const id = this.generatePageId();
+    this.pages.set(id, realPage);
+    this.activePageId = id;
 
     this.browser.on("targetcreated", (target: Target) => {
       this.handleNewTarget(target);
@@ -99,10 +62,10 @@ export class BrowserEngine {
   }
 
   async connectToExisting(browserUrl: string): Promise<void> {
-    this.browser = await puppeteerExtra.connect({
+    this.browser = await puppeteerCore.connect({
       browserURL: browserUrl,
       defaultViewport: this.config.defaultViewport,
-    }) as unknown as Browser;
+    });
 
     const existingPages = await this.browser.pages();
     for (const page of existingPages) {
