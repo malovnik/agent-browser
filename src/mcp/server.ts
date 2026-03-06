@@ -7,7 +7,7 @@ import type { BrowserConfig } from "../types.js";
 export function createMcpServer(config: BrowserConfig = {}): McpServer {
   const server = new McpServer({
     name: "agent-browser",
-    version: "0.2.3",
+    version: "0.2.4",
   });
 
   let browser: AgentBrowser | null = null;

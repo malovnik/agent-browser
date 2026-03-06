@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-03-06
+
+### Fixed
+
+- **Wikipedia content preview** — Showed language sidebar instead of article text. Root cause: TreeWalker checked only direct parent element, not ancestors. Now walks up to 6 ancestors checking skip patterns. Added priority selectors (`.mw-parser-output`, `.tm-article-body`, etc.) that bypass text-length scoring
+- **JSON in content preview** — Yandex.Market ad widget JSON (`{"widgets":...}`) leaked into preview text. Added filter: text nodes starting with `{` containing `"` are now rejected
+- **Ad block filtering** — Added `monetize|promo|sponsor|ad-|ads-` to skip patterns for content preview ancestor walk
+
 ## [0.2.3] - 2026-03-06
 
 ### Added

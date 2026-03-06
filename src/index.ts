@@ -307,33 +307,65 @@ export class AgentBrowser {
       try {
         contentPreview = await page.evaluate(() => {
           const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG"]);
-          const SKIP_CLS = /\b(sidebar|nav|footer|header|menu|advert|banner|lang|language|interlanguage|toc|table-of-contents|cookie|consent|popup|modal)\b/i;
-          const SKIP_ID = /\b(sidebar|nav|footer|header|menu|lang|language|toc|tableofcontents|cookie|consent)\b/i;
+          const SKIP_CLS = /\b(sidebar|nav|footer|header|menu|advert|banner|lang|language|interlanguage|toc|table-of-contents|cookie|consent|popup|modal|mw-editsection|ad-|ads-|monetize|promo|sponsor)\b/i;
+          const SKIP_ID = /\b(sidebar|nav|footer|header|menu|lang|language|toc|tableofcontents|cookie|consent|siteSub|contentSub|mw-panel)\b/i;
 
-          const candidates = document.querySelectorAll(
-            "article, main, [role='main'], [role='article'], .post, .content, .post-content, .entry-content, .story, .article-body, .article__body, .mw-parser-output, td.postcolor, #bodyContent, .tm-article-body"
-          );
-          let contentRoot: Element = document.body;
-          let bestLen = 0;
-          for (const el of candidates) {
-            if (SKIP.has(el.tagName)) continue;
-            if (SKIP_CLS.test(el.className?.toString?.() ?? "")) continue;
-            const text = el.textContent?.trim() ?? "";
-            if (text.length > bestLen) {
-              bestLen = text.length;
+          const PRIORITY_SELECTORS = [
+            ".mw-parser-output",
+            ".tm-article-body",
+            ".article-body",
+            ".article__body",
+            ".post-content",
+            ".entry-content",
+            ".story-body",
+          ];
+
+          let contentRoot: Element | null = null;
+          for (const sel of PRIORITY_SELECTORS) {
+            const el = document.querySelector(sel);
+            if (el && (el.textContent?.trim().length ?? 0) > 200) {
               contentRoot = el;
+              break;
             }
           }
+
+          if (!contentRoot) {
+            const candidates = document.querySelectorAll(
+              "article, main, [role='main'], [role='article'], .post, .content, .post-content, .entry-content, .story, .article-body, .article__body, td.postcolor, #bodyContent"
+            );
+            let bestLen = 0;
+            for (const el of candidates) {
+              if (SKIP.has(el.tagName)) continue;
+              if (SKIP_CLS.test(el.className?.toString?.() ?? "")) continue;
+              const text = el.textContent?.trim() ?? "";
+              if (text.length > bestLen) {
+                bestLen = text.length;
+                contentRoot = el;
+              }
+            }
+          }
+
+          if (!contentRoot) contentRoot = document.body;
 
           const walker = document.createTreeWalker(contentRoot, NodeFilter.SHOW_TEXT, {
             acceptNode: (node) => {
               const p = node.parentElement;
               if (!p) return NodeFilter.FILTER_REJECT;
               if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-              if (SKIP_CLS.test(p.className?.toString?.() ?? "")) return NodeFilter.FILTER_REJECT;
-              if (SKIP_ID.test(p.id ?? "")) return NodeFilter.FILTER_REJECT;
+
+              let ancestor: Element | null = p;
+              for (let i = 0; i < 6 && ancestor && ancestor !== contentRoot; i++) {
+                const cls = ancestor.className?.toString?.() ?? "";
+                const id = ancestor.id ?? "";
+                if (SKIP_CLS.test(cls) || SKIP_ID.test(id) || SKIP.has(ancestor.tagName)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                ancestor = ancestor.parentElement;
+              }
+
               const t = node.textContent?.trim();
               if (!t || t.length < 3) return NodeFilter.FILTER_REJECT;
+              if (t.startsWith("{") && t.includes('"')) return NodeFilter.FILTER_REJECT;
               return NodeFilter.FILTER_ACCEPT;
             },
           });
