@@ -114,27 +114,27 @@ agent-browser работает как [MCP](https://modelcontextprotocol.io/)-с
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
 ```
 
-С видимым окном браузера добавь `"--headed"` в конец массива `args`.
+По умолчанию запускается с видимым окном (лучшая anti-detection). Добавь `"--headless"` в `args` для headless-режима.
 
 Перезапусти Claude Desktop после сохранения. 21 инструмент появится в меню инструментов (иконка молотка).
 
 ### Claude Code
 
 ```bash
-claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts
+claude mcp add --scope user agent-browser -- node /path/to/agent-browser/dist/bin/cli.js
 ```
 
-С видимым окном браузера:
+Для headless-режима:
 
 ```bash
-claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts --headed
+claude mcp add --scope user agent-browser -- node /path/to/agent-browser/dist/bin/cli.js --headless
 ```
 
 ### OpenClaw (ClawBot)
@@ -145,8 +145,8 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"],
       "transport": "stdio"
     }
   }
@@ -156,8 +156,8 @@ claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser
 Или через CLI:
 
 ```bash
-openclaw config set mcpServers.agent-browser.command "npx"
-openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]'
+openclaw config set mcpServers.agent-browser.command "node"
+openclaw config set mcpServers.agent-browser.args '["/absolute/path/to/agent-browser/dist/bin/cli.js"]'
 ```
 
 ### Cursor
@@ -168,8 +168,8 @@ openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/ag
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -186,8 +186,8 @@ openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/ag
   "servers": {
     "agent-browser": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -201,8 +201,8 @@ openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/ag
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"],
       "disabled": false
     }
   }
@@ -217,8 +217,8 @@ openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/ag
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -232,8 +232,8 @@ openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/ag
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -246,7 +246,7 @@ Continue автоматически подхватывает JSON-конфиги
 agent-browser общается через stdio по протоколу [Model Context Protocol](https://modelcontextprotocol.io/). Запусти сервер:
 
 ```bash
-npx tsx src/bin/cli.ts
+node dist/bin/cli.js
 ```
 
 Подключи свой клиент к stdin/stdout этого процесса.
@@ -281,7 +281,7 @@ await browser.close();
 
 | Флаг | Описание |
 |------|----------|
-| `--headed` | Запуск с видимым окном браузера (по умолчанию: headless) |
+| `--headless` | Запуск без видимого окна (по умолчанию: headed для anti-detection) |
 | `--chrome-path=PATH` | Путь к исполняемому файлу Chrome/Chromium |
 | `--user-data-dir=PATH` | Директория пользовательских данных Chrome (сохраняет сессии/куки) |
 | `--help` | Показать справку |

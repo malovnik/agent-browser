@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-03-06
+
+### Added
+
+- **Auto-dismiss modals** — Cookie consent banners, sign-in popups, and blocking overlays (`aria-modal="true"`) are automatically detected and dismissed after page load. Three-tier strategy: (1) known consent SDK selectors (OneTrust, CookieBot, Didomi, etc.), (2) text/aria-label pattern matching on buttons inside modal containers, (3) fallback scan of `[aria-modal]`/`[role="dialog"]` overlays. Supports English and Russian button labels
+
+### Tested
+
+- Booking.com: sign-in modal (`aria-modal`) blocked page to 3 elements → auto-dismiss restores full 177 elements
+- Airbnb: cookie/translation modal blocked page to 2 elements → auto-dismiss restores full 131 elements
+
 ## [0.2.2] - 2026-03-06
 
 ### Fixed

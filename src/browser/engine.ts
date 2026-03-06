@@ -115,6 +115,7 @@ export class BrowserEngine {
 
         await this.waitForNetworkIdle(page);
         await this.waitForStable(page);
+        await this.dismissModals(page);
         return page;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "";
@@ -257,6 +258,107 @@ export class BrowserEngine {
         .waitForNetworkIdle({ idleTime: 500, timeout });
     } catch {
       /* timeout is fine — some sites have persistent connections */
+    }
+  }
+
+  private async dismissModals(page: Page): Promise<void> {
+    try {
+      const dismissed = await page.evaluate(() => {
+        const results: string[] = [];
+
+        const CONSENT_SELECTORS = [
+          "#onetrust-accept-btn-handler",
+          ".onetrust-close-btn-handler",
+          "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+          "#CybotCookiebotDialogBodyButtonAccept",
+          "[data-cookiefirst-action='accept']",
+          ".cc-btn.cc-allow",
+          ".cc-accept",
+          ".cookie-consent__accept",
+          ".js-cookie-accept",
+          "[data-testid='cookie-policy-manage-dialog-btn-accept']",
+          "[data-testid='GDPR-accept']",
+          ".gdpr-accept",
+          ".consent-accept",
+          ".cookie-banner__accept",
+          "#accept-cookie",
+          ".accept-cookies",
+          "#didomi-notice-agree-button",
+          ".sp_choice_type_11",
+        ];
+
+        for (const sel of CONSENT_SELECTORS) {
+          const btn = document.querySelector<HTMLElement>(sel);
+          if (btn && btn.offsetParent !== null) {
+            btn.click();
+            results.push(`consent:${sel}`);
+          }
+        }
+
+        const CLOSE_TEXT =
+          /^(close|dismiss|got it|ok|accept|agree|allow|разрешить|принять|закрыть|понятно|хорошо|ок|согласен|×|✕|✖|✗)$/i;
+        const CLOSE_ATTR =
+          /\b(close|dismiss|закрыть|отклонить)\b/i;
+        const COOKIE_TEXT =
+          /\b(cookie|cookies|accept all|accept cookies|принять все|принять cookie)/i;
+
+        const candidates = document.querySelectorAll<HTMLElement>(
+          'button, [role="button"], a.btn, a.button, [class*="close"], [class*="dismiss"], [aria-label*="close" i], [aria-label*="закрыть" i], [aria-label*="dismiss" i]'
+        );
+
+        for (const el of candidates) {
+          if (el.offsetParent === null && !el.closest("[aria-modal]")) continue;
+
+          const text = (el.textContent || "").trim();
+          const ariaLabel = el.getAttribute("aria-label") || "";
+          const title = el.getAttribute("title") || "";
+
+          const isCloseBtn =
+            CLOSE_TEXT.test(text) ||
+            CLOSE_ATTR.test(ariaLabel) ||
+            CLOSE_ATTR.test(title) ||
+            COOKIE_TEXT.test(text);
+
+          if (!isCloseBtn) continue;
+
+          const modal = el.closest(
+            '[aria-modal="true"], [role="dialog"], [role="alertdialog"], ' +
+            '[class*="modal"], [class*="popup"], [class*="overlay"], ' +
+            '[class*="cookie"], [class*="consent"], [class*="banner"], ' +
+            '[class*="gdpr"], [class*="notice"]'
+          );
+          if (!modal) continue;
+
+          el.click();
+          results.push(`modal:${text || ariaLabel || el.className}`);
+        }
+
+        if (results.length === 0) {
+          const overlays = document.querySelectorAll<HTMLElement>(
+            '[aria-modal="true"], [role="dialog"]'
+          );
+          for (const overlay of overlays) {
+            const closeBtn = overlay.querySelector<HTMLElement>(
+              'button[aria-label*="close" i], button[aria-label*="dismiss" i], ' +
+              'button[aria-label*="закрыть" i], ' +
+              '[class*="close"], [class*="dismiss"]'
+            );
+            if (closeBtn) {
+              closeBtn.click();
+              results.push(`overlay:${closeBtn.className || closeBtn.tagName}`);
+            }
+          }
+        }
+
+        return results;
+      });
+
+      if (dismissed.length > 0) {
+        await new Promise((r) => setTimeout(r, 300));
+        await this.waitForStable(page);
+      }
+    } catch {
+      /* page might not be ready or context destroyed — safe to ignore */
     }
   }
 
