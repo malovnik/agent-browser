@@ -1,6 +1,6 @@
 {
   "name": "agent-browser",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "AI-first browser with semantic action discovery and token-optimized page representation",
   "type": "module",
   "main": "dist/index.js",

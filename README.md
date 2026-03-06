@@ -114,27 +114,27 @@ Edit the config file:
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
 ```
 
-With visible browser window, add `"--headed"` to the end of the `args` array.
+Runs in headed mode by default (best anti-detection). Add `"--headless"` to args for headless mode.
 
 Restart Claude Desktop after saving. The 21 tools will appear in the tool picker (hammer icon).
 
 ### Claude Code
 
 ```bash
-claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts
+claude mcp add --scope user agent-browser -- node /path/to/agent-browser/dist/bin/cli.js
 ```
 
-With visible browser window:
+For headless mode:
 
 ```bash
-claude mcp add --scope user agent-browser -- npx --prefix /path/to/agent-browser tsx src/bin/cli.ts --headed
+claude mcp add --scope user agent-browser -- node /path/to/agent-browser/dist/bin/cli.js --headless
 ```
 
 ### OpenClaw (ClawBot)
@@ -145,8 +145,8 @@ Add to your `openclaw.json`:
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"],
       "transport": "stdio"
     }
   }
@@ -156,8 +156,8 @@ Add to your `openclaw.json`:
 Or via CLI:
 
 ```bash
-openclaw config set mcpServers.agent-browser.command "npx"
-openclaw config set mcpServers.agent-browser.args '["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]'
+openclaw config set mcpServers.agent-browser.command "node"
+openclaw config set mcpServers.agent-browser.args '["/absolute/path/to/agent-browser/dist/bin/cli.js"]'
 ```
 
 ### Cursor
@@ -168,8 +168,8 @@ Create or edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-scop
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -186,8 +186,8 @@ Create `.vscode/mcp.json` in your project:
   "servers": {
     "agent-browser": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -201,8 +201,8 @@ Click the MCP Servers icon in the Cline pane > Configure > "Configure MCP Server
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"],
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"],
       "disabled": false
     }
   }
@@ -217,8 +217,8 @@ Edit `~/.codeium/windsurf/mcp_config.json` or open it via the MCPs icon > Config
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -232,8 +232,8 @@ Create a JSON config file in `.continue/mcpServers/agent-browser.json` in your w
 {
   "mcpServers": {
     "agent-browser": {
-      "command": "npx",
-      "args": ["tsx", "/absolute/path/to/agent-browser/src/bin/cli.ts"]
+      "command": "node",
+      "args": ["/absolute/path/to/agent-browser/dist/bin/cli.js"]
     }
   }
 }
@@ -246,7 +246,7 @@ Continue automatically picks up JSON configs from `.continue/mcpServers/` direct
 agent-browser communicates over stdio using the [Model Context Protocol](https://modelcontextprotocol.io/). Start the server:
 
 ```bash
-npx tsx src/bin/cli.ts
+node dist/bin/cli.js
 ```
 
 Connect your client to stdin/stdout of this process.
@@ -281,7 +281,7 @@ await browser.close();
 
 | Flag | Description |
 |------|-------------|
-| `--headed` | Run with visible browser window (default: headless) |
+| `--headless` | Run without visible browser window (default: headed for anti-detection) |
 | `--chrome-path=PATH` | Path to Chrome/Chromium executable |
 | `--user-data-dir=PATH` | Chrome user data directory (persists sessions/cookies) |
 | `--help` | Show help message |

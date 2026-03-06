@@ -85,25 +85,51 @@ export class BrowserEngine {
 
   async navigate(url: string): Promise<Page> {
     await this.ensureBrowser();
-    const page = this.getActivePage();
 
-    try {
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-        timeout: 30_000,
-      });
-    } catch (err: unknown) {
-      const isTimeout = err instanceof Error && err.message.includes("timeout");
-      if (!isTimeout) throw err;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const page = this.getActivePage();
+
+        try {
+          await page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: 30_000,
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "";
+          const isTimeout = msg.includes("timeout");
+          const isContextDestroyed =
+            msg.includes("Execution context was destroyed") ||
+            msg.includes("most likely because of a navigation");
+          if (!isTimeout && !isContextDestroyed) throw err;
+          if (isContextDestroyed && attempt === 0) {
+            await new Promise((r) => setTimeout(r, 1000));
+            continue;
+          }
+        }
+
+        const title = await page.title();
+        if (title === "Just a moment...") {
+          await this.waitForCloudflare(page);
+        }
+
+        await this.waitForNetworkIdle(page);
+        await this.waitForStable(page);
+        return page;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "";
+        const isContextDestroyed =
+          msg.includes("Execution context was destroyed") ||
+          msg.includes("most likely because of a navigation");
+        if (isContextDestroyed && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        throw err;
+      }
     }
 
-    const title = await page.title();
-    if (title === "Just a moment...") {
-      await this.waitForCloudflare(page);
-    }
-
-    await this.waitForStable(page);
-    return page;
+    return this.getActivePage();
   }
 
   async newTab(url?: string): Promise<string> {
@@ -222,6 +248,15 @@ export class BrowserEngine {
       }, timeout);
     } catch {
       /* page might not have body yet, that's ok */
+    }
+  }
+
+  private async waitForNetworkIdle(page: Page, timeout = 5000): Promise<void> {
+    try {
+      await (page as unknown as { waitForNetworkIdle: (opts: { idleTime: number; timeout: number }) => Promise<void> })
+        .waitForNetworkIdle({ idleTime: 500, timeout });
+    } catch {
+      /* timeout is fine — some sites have persistent connections */
     }
   }
 

@@ -306,16 +306,18 @@ export class AgentBrowser {
     if (pageType === "article" || pageType === "feed") {
       try {
         contentPreview = await page.evaluate(() => {
-          const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT"]);
-          const SKIP_CLS = /\b(sidebar|nav|footer|header|menu|advert|banner)\b/i;
+          const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG"]);
+          const SKIP_CLS = /\b(sidebar|nav|footer|header|menu|advert|banner|lang|language|interlanguage|toc|table-of-contents|cookie|consent|popup|modal)\b/i;
+          const SKIP_ID = /\b(sidebar|nav|footer|header|menu|lang|language|toc|tableofcontents|cookie|consent)\b/i;
 
           const candidates = document.querySelectorAll(
-            "article, main, [role='main'], [role='article'], .post, .content, .post-content, .entry-content, .story, td.postcolor"
+            "article, main, [role='main'], [role='article'], .post, .content, .post-content, .entry-content, .story, .article-body, .article__body, .mw-parser-output, td.postcolor, #bodyContent, .tm-article-body"
           );
           let contentRoot: Element = document.body;
           let bestLen = 0;
           for (const el of candidates) {
             if (SKIP.has(el.tagName)) continue;
+            if (SKIP_CLS.test(el.className?.toString?.() ?? "")) continue;
             const text = el.textContent?.trim() ?? "";
             if (text.length > bestLen) {
               bestLen = text.length;
@@ -329,6 +331,7 @@ export class AgentBrowser {
               if (!p) return NodeFilter.FILTER_REJECT;
               if (SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
               if (SKIP_CLS.test(p.className?.toString?.() ?? "")) return NodeFilter.FILTER_REJECT;
+              if (SKIP_ID.test(p.id ?? "")) return NodeFilter.FILTER_REJECT;
               const t = node.textContent?.trim();
               if (!t || t.length < 3) return NodeFilter.FILTER_REJECT;
               return NodeFilter.FILTER_ACCEPT;
