@@ -1,10 +1,14 @@
 import { existsSync } from "node:fs";
-import puppeteer, {
+import puppeteerExtra from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import {
   type Browser,
   type Page,
   type Target,
 } from "puppeteer-core";
 import type { BrowserConfig, TabInfo } from "../types.js";
+
+puppeteerExtra.use(StealthPlugin());
 
 const DEFAULT_CHROME_PATHS: Record<string, string[]> = {
   darwin: [
@@ -62,6 +66,7 @@ export class BrowserEngine {
       "--no-default-browser-check",
       "--disable-background-networking",
       "--disable-extensions",
+      "--disable-blink-features=AutomationControlled",
       ...(this.config.args ?? []),
     ];
 
@@ -69,12 +74,12 @@ export class BrowserEngine {
       args.push(`--user-data-dir=${this.config.userDataDir}`);
     }
 
-    this.browser = await puppeteer.launch({
+    this.browser = await puppeteerExtra.launch({
       executablePath,
-      headless: this.config.headless,
+      headless: this.config.headless ? "new" : false,
       defaultViewport: this.config.defaultViewport,
       args,
-    });
+    }) as unknown as Browser;
 
     const existingPages = await this.browser.pages();
     if (existingPages.length > 0) {
@@ -94,10 +99,10 @@ export class BrowserEngine {
   }
 
   async connectToExisting(browserUrl: string): Promise<void> {
-    this.browser = await puppeteer.connect({
+    this.browser = await puppeteerExtra.connect({
       browserURL: browserUrl,
       defaultViewport: this.config.defaultViewport,
-    });
+    }) as unknown as Browser;
 
     const existingPages = await this.browser.pages();
     for (const page of existingPages) {

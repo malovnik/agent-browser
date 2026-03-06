@@ -14,17 +14,26 @@
     "start": "node dist/bin/cli.js",
     "mcp": "tsx src/bin/cli.ts --mcp"
   },
-  "keywords": ["browser", "ai", "agent", "mcp", "automation", "action-discovery"],
+  "keywords": [
+    "browser",
+    "ai",
+    "agent",
+    "mcp",
+    "automation",
+    "action-discovery"
+  ],
   "author": "malovnik",
   "license": "MIT",
   "dependencies": {
-    "puppeteer-core": "^24.0.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "puppeteer-core": "^24.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   }
 }
