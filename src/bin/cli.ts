@@ -6,7 +6,7 @@ import type { BrowserConfig } from "../types.js";
 const args = process.argv.slice(2);
 
 const config: BrowserConfig = {
-  headless: !args.includes("--headed"),
+  headless: args.includes("--headless"),
 };
 
 const execPathArg = args.find((a) => a.startsWith("--chrome-path="));
@@ -27,7 +27,7 @@ Usage:
   agent-browser [options]
 
 Options:
-  --headed              Run with visible browser window
+  --headless            Run in headless mode (default: headed for best anti-detection)
   --chrome-path=PATH    Path to Chrome/Chromium executable
   --user-data-dir=PATH  Path to Chrome user data directory (for sessions)
   --help                Show this help message
