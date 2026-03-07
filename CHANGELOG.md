@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-03-07
+
+### Added
+
+- **`press_key` tool** — Press any keyboard key (Enter, Escape, Tab, arrow keys, etc.). Essential for form submission and modal dismissal without clicking
+- **`hover` tool** — Move mouse over element by ref; auto-returns updated snapshot to reveal dropdown menus, tooltips, and mouseover-triggered content
+- **`upload_file` tool** — Upload a file to `input[type=file]` via CDP `DOM.setFileInputFiles` — no file dialog required
+- **`wait_for_text` tool** — Wait up to N ms for specific text to appear on page; returns snapshot when found. Useful after AJAX, form submit, or SPA navigation
+
+### Fixed
+
+- **Reliable element interaction via CDP backendNodeId** — `click`, `fill`, `select`, and value reading now use CDP `DOM.resolveNode` with `backendDOMNodeId` from the accessibility tree instead of fragile index-based `querySelectorAll`. Falls back to index-based only when `backendNodeId` is unavailable
+- **SPA empty accessibility tree retry** — If `analyze()` returns 0 elements (SPA not yet loaded), automatically retries after 800ms then 1500ms before giving up
+- **Busy wait removed from `killStaleChrome`** — Replaced CPU-spinning `while` loop with `execFileSync("sleep", ["1.5"])`
+
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

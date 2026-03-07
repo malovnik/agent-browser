@@ -38,6 +38,7 @@ export interface PageElement {
   href?: string;
   ariaLabel?: string;
   boundingBox?: { x: number; y: number; width: number; height: number };
+  backendNodeId?: number;
 }
 
 export interface ActionGroup {

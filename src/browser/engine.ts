@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { connect as connectReal } from "puppeteer-real-browser";
 import puppeteerCore, {
   type Browser,
@@ -6,11 +9,109 @@ import puppeteerCore, {
 } from "puppeteer-core";
 import type { BrowserConfig, TabInfo } from "../types.js";
 
+const PID_FILE = "/tmp/openclaw/browser.pid";
+
+function writePidFile(pid: number): void {
+  try {
+    fs.mkdirSync(path.dirname(PID_FILE), { recursive: true });
+    fs.writeFileSync(PID_FILE, String(pid), "utf-8");
+  } catch {
+    // non-fatal
+  }
+}
+
+function readPidFile(): number | null {
+  try {
+    const raw = fs.readFileSync(PID_FILE, "utf-8").trim();
+    const pid = parseInt(raw, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPidFile(): void {
+  try {
+    fs.rmSync(PID_FILE, { force: true });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Kill stale Chrome processes using the given userDataDir.
+ * Uses pkill -f to match by full command line — safe because we match a very specific path.
+ */
+function killStaleChrome(userDataDir: string): void {
+  try {
+    // pkill -f matches against full command line
+    execFileSync("pkill", ["-f", `user-data-dir=${userDataDir}`], {
+      stdio: "pipe",
+    });
+    // Give OS time to reclaim resources
+    // Give OS time to reclaim resources (sync-safe: execFileSync blocks naturally)
+    try {
+      execFileSync("sleep", ["1.5"], { stdio: "pipe" });
+    } catch {
+      // sleep not available — skip wait
+    }
+  } catch {
+    // No matching processes = pkill exits 1, which is fine
+  }
+}
+
+/**
+ * Remove stale Chrome singleton lock files.
+ * These are left behind when Chrome is force-killed and prevent restart with the same profile.
+ */
+function cleanProfileLocks(userDataDir: string): void {
+  for (const lockFile of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) {
+    const lockPath = path.join(userDataDir, lockFile);
+    try {
+      fs.rmSync(lockPath, { force: true });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+
+/**
+ * Find the Chrome executable.
+ * Priority: CHROME_PATH env → config.executablePath → puppeteer cache.
+ */
+function resolveChromePath(configPath?: string): string | undefined {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  if (configPath) return configPath;
+  // Puppeteer-bundled Chrome for Testing
+  const puppeteerCache = path.join(
+    process.env.HOME ?? `/Users/${process.env.USER}`,
+    ".cache/puppeteer/chrome",
+  );
+  try {
+    const versions = fs.readdirSync(puppeteerCache).filter((d) => d.startsWith("mac_arm-") || d.startsWith("linux-"));
+    if (versions.length > 0) {
+      const latest = versions.sort().at(-1)!;
+      const candidates = [
+        path.join(puppeteerCache, latest, "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"),
+        path.join(puppeteerCache, latest, "chrome-linux", "chrome"),
+      ];
+      for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+      }
+    }
+  } catch {
+    // not found
+  }
+  return undefined;
+}
+
 export class BrowserEngine {
   private browser: Browser | null = null;
   private pages: Map<string, Page> = new Map();
   private activePageId: string | null = null;
   private config: BrowserConfig;
+
 
   constructor(config: BrowserConfig = {}) {
     this.config = {
@@ -23,10 +124,21 @@ export class BrowserEngine {
   async launch(): Promise<void> {
     if (this.browser) return;
 
+    // Clean up stale processes and locks before starting
+    if (this.config.userDataDir) {
+      killStaleChrome(this.config.userDataDir);
+      cleanProfileLocks(this.config.userDataDir);
+    }
+
     const args = [
       "--no-first-run",
       "--no-default-browser-check",
-      "--disable-background-networking",
+      // Keep background networking so passwords/autofill sync works within profile
+      // (intentionally NOT adding --disable-background-networking)
+      // Restore previous tabs on Chrome restart
+      "--restore-last-session",
+      // Enable password saving (chrome-launcher sets --password-store=basic which is fine)
+      "--enable-features=PasswordImport",
       ...(this.config.args ?? []),
     ];
 
@@ -34,14 +146,22 @@ export class BrowserEngine {
       args.push(`--user-data-dir=${this.config.userDataDir}`);
     }
 
+    const chromePath = resolveChromePath(this.config.executablePath);
     const { browser, page } = await connectReal({
       headless: this.config.headless as boolean,
       turnstile: true,
       args,
       disableXvfb: true,
+      ...(chromePath ? { customConfig: { chromePath } } : {}),
     });
 
     this.browser = browser as unknown as Browser;
+
+    // Save Chrome PID so we can kill it on next launch / gateway restart
+    const chromePid = this.resolveChromePid();
+    if (chromePid) {
+      writePidFile(chromePid);
+    }
 
     const realPage = page as unknown as Page;
     if (this.config.defaultViewport) {
@@ -54,7 +174,7 @@ export class BrowserEngine {
     this.activePageId = id;
 
     this.browser.on("targetcreated", (target: Target) => {
-      this.handleNewTarget(target);
+      void this.handleNewTarget(target);
     });
 
     this.browser.on("targetdestroyed", (target: Target) => {
@@ -135,6 +255,7 @@ export class BrowserEngine {
 
   async newTab(url?: string): Promise<string> {
     await this.ensureBrowser();
+
     const page = await this.browser!.newPage();
     const id = this.generatePageId();
     this.pages.set(id, page);
@@ -197,6 +318,55 @@ export class BrowserEngine {
     await this.waitForStable(page);
   }
 
+  async pressKey(key: string): Promise<void> {
+    const page = this.getActivePage();
+    await page.keyboard.press(key as Parameters<typeof page.keyboard.press>[0]);
+  }
+
+  async hoverByNodeId(backendNodeId: number): Promise<void> {
+    const page = this.getActivePage();
+    const client = await page.createCDPSession();
+    try {
+      const { model } = await client.send("DOM.getBoxModel", { backendNodeId });
+      // border quad: [x1,y1, x2,y2, x3,y3, x4,y4] — clockwise from top-left
+      const b = model.border;
+      const cx = (b[0] + b[2]) / 2;
+      const cy = (b[1] + b[5]) / 2;
+      await page.mouse.move(cx, cy);
+    } finally {
+      await client.detach();
+    }
+  }
+
+  async uploadFileByNodeId(backendNodeId: number, filePath: string): Promise<void> {
+    const page = this.getActivePage();
+    const client = await page.createCDPSession();
+    try {
+      const { nodeIds } = await client.send("DOM.pushNodesByBackendIdsToFrontend", {
+        backendNodeIds: [backendNodeId],
+      });
+      const nodeId = nodeIds[0];
+      if (!nodeId) throw new Error("Could not resolve node for file upload");
+      await client.send("DOM.setFileInputFiles", { nodeId, files: [filePath] });
+    } finally {
+      await client.detach();
+    }
+  }
+
+  async waitForText(text: string, timeout: number): Promise<boolean> {
+    const page = this.getActivePage();
+    try {
+      await page.waitForFunction(
+        (t: string) => (document.body?.textContent ?? "").includes(t),
+        { timeout },
+        text,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async screenshot(): Promise<Buffer> {
     const page = this.getActivePage();
     return (await page.screenshot({ type: "png", fullPage: false })) as Buffer;
@@ -211,16 +381,94 @@ export class BrowserEngine {
 
   async close(): Promise<void> {
     if (this.browser) {
-      await this.browser.close();
+      try {
+        await this.browser.close();
+      } catch {
+        // Force-kill if graceful close fails
+        if (this.config.userDataDir) {
+          killStaleChrome(this.config.userDataDir);
+        }
+      }
       this.browser = null;
       this.pages.clear();
       this.activePageId = null;
+      clearPidFile();
     }
   }
 
   private async ensureBrowser(): Promise<void> {
     if (!this.browser) {
       await this.launch();
+    }
+  }
+
+  /**
+   * Try to get the PID of the Chrome process we just launched.
+   * Looks for Chrome processes using our userDataDir.
+   */
+  private resolveChromePid(): number | null {
+    if (!this.config.userDataDir) return null;
+    try {
+      const result = execFileSync(
+        "pgrep",
+        ["-f", `user-data-dir=${this.config.userDataDir}`],
+        { stdio: "pipe", encoding: "utf-8" },
+      );
+      const pids = result.trim().split("\n").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      // Return the first (lowest PID = main browser process, not renderer/helper)
+      return pids.length > 0 ? Math.min(...pids) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Handle new targets created by Chrome.
+   *
+   * Distinguishes between:
+   * - User-opened tabs (opener = null) → leave alone, don't track
+   * - JS popup windows (opener = some page) → close immediately to prevent accumulation
+   * - Pages opened via newTab() → tracked separately, already in pages map
+   */
+  private async handleNewTarget(target: Target): Promise<void> {
+    if (target.type() !== "page") return;
+
+    // target.opener() is non-null only for JS popups (window.open()).
+    // User-opened tabs and agent newTab() calls have no opener.
+    const opener = target.opener();
+    if (!opener) {
+      // User-opened tab or newTab() call — do not interfere.
+      // newTab() already adds the page to this.pages directly.
+      return;
+    }
+
+    // This is a JS popup opened by a page (window.open(), target=_blank link, etc.).
+    // Close it immediately to prevent window accumulation.
+    const page = await target.page();
+    if (!page) return;
+    try {
+      await page.close();
+    } catch {
+      // already closed or context gone — ignore
+    }
+  }
+
+  private async injectPagePolyfills(page: Page): Promise<void> {
+    await page.evaluateOnNewDocument("if(typeof __name==='undefined'){window.__name=(fn)=>fn}");
+    await page.evaluate("if(typeof __name==='undefined'){window.__name=function(fn){return fn}}");
+  }
+
+  private handleDestroyedTarget(target: Target): void {
+    void target; // unused but keeps event handler signature consistent
+    for (const [id, page] of this.pages) {
+      if (page.isClosed()) {
+        this.pages.delete(id);
+        if (this.activePageId === id) {
+          const remaining = Array.from(this.pages.keys());
+          this.activePageId =
+            remaining.length > 0 ? remaining[remaining.length - 1] : null;
+        }
+      }
     }
   }
 
@@ -373,34 +621,5 @@ export class BrowserEngine {
 
   private generatePageId(): string {
     return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  }
-
-  private async handleNewTarget(target: Target): Promise<void> {
-    if (target.type() === "page") {
-      const page = await target.page();
-      if (page) {
-        await this.injectPagePolyfills(page);
-        const id = this.generatePageId();
-        this.pages.set(id, page);
-      }
-    }
-  }
-
-  private async injectPagePolyfills(page: Page): Promise<void> {
-    await page.evaluateOnNewDocument("if(typeof __name==='undefined'){window.__name=(fn)=>fn}");
-    await page.evaluate("if(typeof __name==='undefined'){window.__name=function(fn){return fn}}");
-  }
-
-  private handleDestroyedTarget(target: Target): void {
-    for (const [id, page] of this.pages) {
-      if (page.isClosed()) {
-        this.pages.delete(id);
-        if (this.activePageId === id) {
-          const remaining = Array.from(this.pages.keys());
-          this.activePageId =
-            remaining.length > 0 ? remaining[remaining.length - 1] : null;
-        }
-      }
-    }
   }
 }

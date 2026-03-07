@@ -200,6 +200,37 @@ export class AgentBrowser {
     await this.engine.close();
   }
 
+  async pressKey(key: string): Promise<void> {
+    await this.engine.pressKey(key);
+  }
+
+  async hover(ref: string): Promise<{ success: boolean }> {
+    const element = this.findElementByRef(ref);
+    if (!element?.backendNodeId) return { success: false };
+    try {
+      await this.engine.hoverByNodeId(element.backendNodeId);
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+
+  async uploadFile(ref: string, filePath: string): Promise<{ success: boolean }> {
+    const element = this.findElementByRef(ref);
+    if (!element?.backendNodeId) return { success: false };
+    try {
+      await this.engine.uploadFileByNodeId(element.backendNodeId, filePath);
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+
+  async waitForText(text: string, timeoutMs = 10_000): Promise<{ found: boolean }> {
+    const found = await this.engine.waitForText(text, timeoutMs);
+    return { found };
+  }
+
   async snapshotWithIntent(intent: Intent): Promise<string> {
     const start = Date.now();
     const state = await this.buildPageState(start);
@@ -287,7 +318,16 @@ export class AgentBrowser {
     const url = page.url();
     const title = await page.title();
 
-    const elements = await this.analyzer.analyze(page);
+    // Retry accessibility tree analysis for SPAs that load content asynchronously
+    let elements = await this.analyzer.analyze(page);
+    if (elements.length === 0) {
+      await new Promise((r) => setTimeout(r, 800));
+      elements = await this.analyzer.analyze(page);
+    }
+    if (elements.length === 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      elements = await this.analyzer.analyze(page);
+    }
     const pageType = this.classifier.classify(url, title, elements);
     const actionGroups = this.discoverer.discover(pageType, elements);
 
@@ -416,57 +456,45 @@ export class AgentBrowser {
     action: "click" | "type" | "clear" | "select",
     value?: string
   ): Promise<void> {
-    const refIndex = parseInt(ref.replace("@e", ""), 10);
+    const element = this.findElementByRef(ref);
 
+    // Primary path: use CDP backendNodeId for reliable element resolution
+    if (element?.backendNodeId) {
+      await this.executeByBackendNodeId(page, element.backendNodeId, action, value);
+      return;
+    }
+
+    // Fallback: index-based DOM query (for elements without backendNodeId)
+    const refIndex = parseInt(ref.replace("@e", ""), 10);
     await page.evaluate(
       (params: { refIndex: number; action: string; value?: string }) => {
         const interactiveSelectors = [
-          "a[href]",
-          "button",
-          "input:not([type=hidden])",
-          "select",
-          "textarea",
-          '[role="button"]',
-          '[role="link"]',
-          '[role="textbox"]',
-          '[role="searchbox"]',
-          '[role="combobox"]',
-          '[role="checkbox"]',
-          '[role="radio"]',
+          "a[href]", "button", "input:not([type=hidden])",
+          "select", "textarea", '[role="button"]', '[role="link"]',
+          '[role="textbox"]', '[role="searchbox"]', '[role="combobox"]',
+          '[role="checkbox"]', '[role="radio"]',
         ].join(",");
-
-        const allElements = document.querySelectorAll(interactiveSelectors);
-        const element = allElements[params.refIndex - 1] as HTMLElement | undefined;
-        if (!element) throw new Error(`Element ${params.refIndex} not found`);
-
+        const el = document.querySelectorAll(interactiveSelectors)[params.refIndex - 1] as HTMLElement | undefined;
+        if (!el) throw new Error(`Element ${params.refIndex} not found`);
         switch (params.action) {
-          case "click":
-            element.click();
-            break;
+          case "click": el.click(); break;
           case "type": {
-            const input = element as HTMLInputElement;
-            input.focus();
-            input.value = params.value ?? "";
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.dispatchEvent(new Event("change", { bubbles: true }));
+            const inp = el as HTMLInputElement;
+            inp.focus(); inp.value = params.value ?? "";
+            inp.dispatchEvent(new Event("input", { bubbles: true }));
+            inp.dispatchEvent(new Event("change", { bubbles: true }));
             break;
           }
           case "clear": {
-            const inp = element as HTMLInputElement;
-            inp.focus();
-            inp.value = "";
+            const inp = el as HTMLInputElement;
+            inp.focus(); inp.value = "";
             inp.dispatchEvent(new Event("input", { bubbles: true }));
             break;
           }
           case "select": {
-            const sel = element as HTMLSelectElement;
-            const option = Array.from(sel.options).find(
-              (o) => o.value === params.value || o.textContent?.trim() === params.value
-            );
-            if (option) {
-              sel.value = option.value;
-              sel.dispatchEvent(new Event("change", { bubbles: true }));
-            }
+            const sel = el as HTMLSelectElement;
+            const opt = Array.from(sel.options).find(o => o.value === params.value || o.textContent?.trim() === params.value);
+            if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event("change", { bubbles: true })); }
             break;
           }
         }
@@ -475,22 +503,95 @@ export class AgentBrowser {
     );
   }
 
+  private async executeByBackendNodeId(
+    page: Page,
+    backendNodeId: number,
+    action: "click" | "type" | "clear" | "select",
+    value?: string
+  ): Promise<void> {
+    const client = await page.createCDPSession();
+    try {
+      const { object } = await client.send("DOM.resolveNode", { backendNodeId });
+      const objectId = object.objectId;
+      if (!objectId) throw new Error(`Could not resolve backendNodeId ${backendNodeId}`);
+
+      switch (action) {
+        case "click":
+          await client.send("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: "function() { this.click(); }",
+            returnByValue: true,
+          });
+          break;
+        case "clear":
+          await client.send("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: `function() {
+              this.focus();
+              this.value = "";
+              this.dispatchEvent(new Event("input", { bubbles: true }));
+            }`,
+            returnByValue: true,
+          });
+          break;
+        case "type":
+          await client.send("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: `function(v) {
+              this.focus();
+              this.value = v;
+              this.dispatchEvent(new Event("input", { bubbles: true }));
+              this.dispatchEvent(new Event("change", { bubbles: true }));
+            }`,
+            arguments: [{ value }],
+            returnByValue: true,
+          });
+          break;
+        case "select":
+          await client.send("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: `function(v) {
+              const opt = Array.from(this.options).find(o => o.value === v || o.textContent.trim() === v);
+              if (opt) { this.value = opt.value; this.dispatchEvent(new Event("change", { bubbles: true })); }
+            }`,
+            arguments: [{ value }],
+            returnByValue: true,
+          });
+          break;
+      }
+    } finally {
+      await client.detach();
+    }
+  }
+
   private async getElementValue(page: Page, ref: string): Promise<string> {
+    const element = this.findElementByRef(ref);
+
+    if (element?.backendNodeId) {
+      const client = await page.createCDPSession();
+      try {
+        const { object } = await client.send("DOM.resolveNode", { backendNodeId: element.backendNodeId });
+        if (!object.objectId) return "";
+        const { result } = await client.send("Runtime.callFunctionOn", {
+          objectId: object.objectId,
+          functionDeclaration: "function() { return this.value ?? ''; }",
+          returnByValue: true,
+        });
+        return String(result.value ?? "");
+      } catch {
+        return "";
+      } finally {
+        await client.detach();
+      }
+    }
+
     const refIndex = parseInt(ref.replace("@e", ""), 10);
     return page.evaluate((idx: number) => {
       const selectors = [
-        "a[href]",
-        "button",
-        "input:not([type=hidden])",
-        "select",
-        "textarea",
-        '[role="button"]',
-        '[role="link"]',
-        '[role="textbox"]',
-        '[role="searchbox"]',
-        '[role="combobox"]',
-        '[role="checkbox"]',
-        '[role="radio"]',
+        "a[href]", "button", "input:not([type=hidden])",
+        "select", "textarea", '[role="button"]', '[role="link"]',
+        '[role="textbox"]', '[role="searchbox"]', '[role="combobox"]',
+        '[role="checkbox"]', '[role="radio"]',
       ].join(",");
       const el = document.querySelectorAll(selectors)[idx - 1] as HTMLInputElement | undefined;
       return el?.value ?? "";

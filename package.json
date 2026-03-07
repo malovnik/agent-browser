@@ -1,6 +1,6 @@
 {
   "name": "agent-browser",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "AI-first browser with semantic action discovery and token-optimized page representation",
   "type": "module",
   "main": "dist/index.js",
@@ -33,6 +33,6 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.9.3"
   }
 }

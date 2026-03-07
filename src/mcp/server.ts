@@ -319,6 +319,68 @@ export function createMcpServer(config: BrowserConfig = {}): McpServer {
   );
 
   server.tool(
+    "press_key",
+    "Press a keyboard key. Common keys: Enter, Escape, Tab, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Backspace, Space, F5. Use after fill() to submit a form, or Escape to close a modal.",
+    { key: z.string().describe("Key name (e.g. 'Enter', 'Escape', 'Tab', 'ArrowDown')") },
+    async ({ key }) => {
+      const b = await ensureBrowser();
+      await b.pressKey(key);
+      return { content: [{ type: "text" as const, text: `Pressed key: ${key}` }] };
+    }
+  );
+
+  server.tool(
+    "hover",
+    "Hover the mouse over an element by ref. Use before snapshot to reveal dropdown menus, tooltips, or lazy-loaded content triggered by mouseover.",
+    { ref: z.string().describe("Element reference like @e1") },
+    async ({ ref }) => {
+      const b = await ensureBrowser();
+      const result = await b.hover(ref);
+      if (!result.success) {
+        return { content: [{ type: "text" as const, text: `Could not hover ${ref} — element not found or missing node info. Try snapshot first.` }] };
+      }
+      await new Promise((r) => setTimeout(r, 300));
+      const snap = await b.snapshot();
+      return { content: [{ type: "text" as const, text: `Hovered ${ref}.\n\n${snap}` }] };
+    }
+  );
+
+  server.tool(
+    "upload_file",
+    "Upload a file to an input[type=file] element by ref. Use snapshot to find the file input ref first.",
+    {
+      ref: z.string().describe("Element reference of the file input, e.g. @e3"),
+      file_path: z.string().describe("Absolute path to the file to upload"),
+    },
+    async ({ ref, file_path }) => {
+      const b = await ensureBrowser();
+      const result = await b.uploadFile(ref, file_path);
+      if (!result.success) {
+        return { content: [{ type: "text" as const, text: `Failed to upload file to ${ref}. Make sure the element is an input[type=file] and has a backendNodeId.` }] };
+      }
+      return { content: [{ type: "text" as const, text: `File uploaded to ${ref}: ${file_path}` }] };
+    }
+  );
+
+  server.tool(
+    "wait_for_text",
+    "Wait until specific text appears on the page (useful after clicking, navigating, or submitting forms). Times out after the given milliseconds.",
+    {
+      text: z.string().describe("Text to wait for on the page"),
+      timeout_ms: z.number().optional().describe("Timeout in milliseconds (default 10000)"),
+    },
+    async ({ text, timeout_ms }) => {
+      const b = await ensureBrowser();
+      const result = await b.waitForText(text, timeout_ms ?? 10_000);
+      if (result.found) {
+        const snap = await b.snapshot();
+        return { content: [{ type: "text" as const, text: `Text "${text}" appeared on page.\n\n${snap}` }] };
+      }
+      return { content: [{ type: "text" as const, text: `Timeout: text "${text}" did not appear within ${timeout_ms ?? 10_000}ms.` }] };
+    }
+  );
+
+  server.tool(
     "close_browser",
     "Close the browser completely",
     {},

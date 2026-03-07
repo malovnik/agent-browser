@@ -8,6 +8,7 @@ interface RawAccessibilityNode {
   description?: string;
   children?: RawAccessibilityNode[];
   properties?: Array<{ name: string; value: { value?: unknown } }>;
+  backendDOMNodeId?: number;
 }
 
 const INTERACTIVE_ROLES = new Set([
@@ -84,6 +85,7 @@ export class DomAnalyzer {
           children: [],
           childIds: node.childIds,
           nodeId: node.nodeId,
+          backendDOMNodeId: node.backendDOMNodeId,
         };
         nodeMap.set(node.nodeId, mapped);
       }
@@ -137,6 +139,10 @@ export class DomAnalyzer {
 
     if (node.value !== undefined) {
       element.value = String(node.value);
+    }
+
+    if (node.backendDOMNodeId) {
+      element.backendNodeId = node.backendDOMNodeId;
     }
 
     const props = node.properties ?? [];
